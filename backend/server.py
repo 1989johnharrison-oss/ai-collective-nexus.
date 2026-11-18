@@ -23,6 +23,8 @@ def db():
  c.execute("CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, created REAL, prompt TEXT, status TEXT, result TEXT)")
  c.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, agent TEXT, status TEXT, detail TEXT)")
  c.execute("CREATE TABLE IF NOT EXISTS knowledge (id TEXT PRIMARY KEY, title TEXT, body TEXT)")
+ c.execute("CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id,id)")
+ c.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created DESC)")
  c.commit()
  return c
 def infer(prompt):
@@ -113,6 +115,12 @@ class API(BaseHTTPRequestHandler):
    key=uuid.uuid4().hex
    with db() as c:c.execute("INSERT INTO knowledge(id,title,body) VALUES(?,?,?)",(key,title.strip(),note.strip()))
    return self.send(201,{"id":key,"status":"saved"})
+  if self.path=="/api/cloud/history":
+   prompt=body.get("prompt");result=body.get("result");provider=body.get("provider")
+   if not isinstance(prompt,str) or not 1<=len(prompt.strip())<=12000 or not isinstance(result,str) or not 1<=len(result)<=50000 or provider not in ("ollama","openrouter"):return self.send(400,{"error":"Invalid cloud task record"})
+   tid=uuid.uuid4().hex
+   with db() as c:c.execute("INSERT INTO tasks VALUES(?,?,?,?,?)",(tid,time.time(),prompt.strip(),"done",result))
+   return self.send(201,{"id":tid,"status":"saved","provider":provider})
   if self.path=="/api/performance":
    if body.get("mode") not in ("eco","balanced","performance"):return self.send(400,{"error":"Unknown mode"})
    global MODE
