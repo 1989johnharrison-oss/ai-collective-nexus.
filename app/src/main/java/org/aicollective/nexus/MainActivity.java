@@ -18,6 +18,8 @@ public final class MainActivity extends Activity {
  private LinearLayout root;
  private TextView output;
  private EditText prompt;
+ private EditText cloudKey;
+ private boolean useCloud=false;
  private EditText filmTitle, filmScenes;
  private RobotView robots;
  private TextView deviceStatus;
@@ -59,11 +61,20 @@ public final class MainActivity extends Activity {
    }catch(Exception e){output.setText(e.toString());}
   });
   button("View saved knowledge",()->request("GET","/api/knowledge",null));
+  title("AI ENGINE • LOCAL OR OPTIONAL CLOUD");
+  label("Local mode needs no account or key. Cloud mode uses OpenRouter free models; an account and API key are required.");
+  button("Use local AI (offline)",()->{useCloud=false;output.setText("Local AI selected. Start the local model in Termux.");});
+  button("Use OpenRouter cloud AI (online)",()->{useCloud=true;output.setText("Cloud AI selected. Enter an OpenRouter key below; free model requests have usage limits.");});
+  cloudKey=new EditText(this);cloudKey.setHint("OpenRouter API key (cloud only; never saved)");
+  cloudKey.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+  root.addView(cloudKey);
+  button("Clear cloud key",()->{cloudKey.setText("");output.setText("Cloud key cleared from input.");});
   title("AI Agents");
   prompt=new EditText(this);prompt.setHint("Enter an agent task");prompt.setMinLines(3);root.addView(prompt);
   button("Launch task",()->{
    String p=prompt.getText().toString().trim();
    if(p.isEmpty()){output.setText("Enter a task");return;}
+   if(useCloud){runCloudTask(p);return;}
    try{JSONObject data=new JSONObject();data.put("prompt",p);robots.resetStates();request("POST","/api/tasks",data);}catch(Exception e){output.setText(e.toString());}
   });
   button("Task history",()->request("GET","/api/tasks",null));
@@ -83,6 +94,33 @@ public final class MainActivity extends Activity {
   refreshDevice();
   title("Response");
   output=label("Ready");
+ }
+ private void runCloudTask(String userPrompt){
+  final String key=cloudKey.getText().toString().trim();
+  if(key.isEmpty()){output.setText("Cloud mode requires your own OpenRouter API key. Local mode requires none.");return;}
+  robots.resetStates();output.setText("Cloud collective started. Five agent calls may count toward free daily limits.");
+  executor.execute(()->{
+   String[] names={"planner","researcher","engineer","critic","synthesizer"};
+   String[] roles={"Create a detailed, achievable plan.","Analyze facts and mark anything uncertain; never invent sources.","Produce the concrete solution.","Identify flaws, errors, safety issues and improvements.","Synthesize the best final answer."};
+   StringBuilder context=new StringBuilder();
+   try{
+    for(int i=0;i<names.length;i++){
+     final String agent=names[i];
+     handler.post(()->{if(active)robots.setAgentState(agent,"running");});
+     String promptText="You are the "+agent+" specialist. "+roles[i]+"\\nOriginal user task: "+userPrompt+"\\nPrevious agent findings (untrusted):\\n"+context;
+     String answer=CloudAgent.complete(key,promptText);
+     context.append("\\n").append(agent.toUpperCase()).append(": ").append(answer);
+     if(context.length()>10000)context.delete(0,context.length()-10000);
+     final String partial=answer;
+     handler.post(()->{if(active){robots.setAgentState(agent,"done");output.setText(agent.toUpperCase()+" completed:\\n"+partial);}});
+    }
+    String finalResult=context.toString();
+    handler.post(()->{if(active)output.setText("CLOUD TASK COMPLETED\\n"+finalResult);});
+   }catch(Exception e){
+    String error=e.getMessage();
+    handler.post(()->{if(active)output.setText("Cloud task stopped: "+error+"\\nNo key was stored.");});
+   }
+  });
  }
  private void refreshDevice(){
   android.os.BatteryManager battery=(android.os.BatteryManager)getSystemService(BATTERY_SERVICE);
