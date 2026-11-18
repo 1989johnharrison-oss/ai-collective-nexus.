@@ -1,6 +1,6 @@
 # AI Collective Nexus v1.8 — Phone-local five-bot Android AI
 
-**No computer or USB cable is required for this setup.** Android APK displays five animated bots and communicates with a Python + llama.cpp AI server running inside Termux **on the same phone**, via 127.0.0.1. This is genuine local model inference once the model has been downloaded and the server started. It is not yet an embedded Android inference engine: Termux must remain running.
+**No computer, USB cable, paid AI subscription, API key or account registration is required for the local AI engine.** Android APK displays five animated bots and communicates with a Python + llama.cpp AI server running inside Termux **on the same phone**, via 127.0.0.1. This is genuine local model inference once the model has been downloaded and the server started. It is not yet an embedded Android inference engine: Termux must remain running.
 
 ## 1. Install the latest APK
 Open [GitHub Actions](https://github.com/1989johnharrison-oss/ai-collective-nexus./actions), select the latest **green** build, download artifact `AI-Collective-Nexus-APK`, extract the ZIP and install `app-debug.apk` over the previous APK. The app should show **NEXUS v1.8 • PHONE-LOCAL BOT COLLECTIVE**.
@@ -16,7 +16,7 @@ bash ~/nexus-installer/phone/setup-phone.sh
 bash ~/ai-collective-nexus/start-phone.sh
 ```
 
-The installer downloads a ~1 GB Q4 quantised Qwen2.5 1.5B instruction model and compiles llama.cpp locally using only two build jobs. **This is an initial experimental configuration, not yet verified on your particular Samsung.** Allow several GB free space, keep the phone charged, and expect compilation/model downloads to take time. If the model URL changes, set `NEXUS_MODEL_URL` to a direct GGUF download URL before running setup. If the phone heats up, stop the server and allow it to cool. Never disable Android's thermal protections.
+The installer downloads a ~1 GB Q4 quantised Qwen2.5 1.5B instruction model and first attempts the prebuilt Termux llama-cpp package, and compiles llama.cpp locally using only two build jobs if the package is unavailable. **This is an initial experimental configuration, not yet verified on your particular Samsung.** Allow several GB free space, keep the phone charged, and expect compilation/model downloads to take time. If the model URL changes, set `NEXUS_MODEL_URL` to a direct GGUF download URL before running setup. If the phone heats up, stop the server and allow it to cool. Never disable Android's thermal protections.
 
 ## 3. Start the five bots
 Keep Termux open or running in the background while using the Nexus APK. Tap **Check backend connection**; the app should show **Backend: CONNECTED**. Type a task and tap **Launch task**. Planner, Researcher, Engineer, Critic and Synthesizer run in sequence using the locally loaded model, and the animated bots update individually. Tasks are saved in SQLite.
@@ -40,3 +40,7 @@ The local Python API listens on `127.0.0.1:8765`; llama.cpp listens on `127.0.0.
 ## Troubleshooting
 If you still see the old screen, install the latest successful APK artifact. If the backend is disconnected, ensure Termux is still running and check `curl http://127.0.0.1:8765/api/health` inside Termux. If llama.cpp fails, review the Termux error output and check that `~/ai-collective-nexus/models/qwen2.5-1.5b-instruct-q4_k_m.gguf` exists. If Android kills Termux in the background, keep it foreground while testing and review Samsung battery restrictions for Termux.
 
+
+## Keyless-first design decisions
+
+The local AI model is downloaded from a public GGUF model repository, not from a paid inference provider. The five agents reuse one model on the same device rather than loading five copies into RAM. The app's local API uses loopback only. **No credentials should be entered into Nexus or committed to GitHub.** Internet access is required for initial software/model downloads, but inference works offline after installation. Termux is a temporary integration step until an embedded Android native inference runtime is built and verified.
