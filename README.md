@@ -1,4 +1,4 @@
-# AI Collective Nexus — Android v1.6 + five-bot Python backend
+# AI Collective Nexus — Android v1.7 + five-bot Python backend
 
 This repository builds an Android controller with five animated robots: **Planner, Researcher, Engineer, Critic and Synthesizer**. It includes a local Python agent backend that calls **Ollama** on your computer, saves tasks and agent events to SQLite, and can be accessed over a USB cable. The Android app displays battery, available RAM and free storage.
 
@@ -42,3 +42,12 @@ Open Nexus on your phone and tap **Check backend connection**. It should say **B
 If the old white screen remains, you have the previous APK installed: download the latest successful workflow artifact and install it. If the build fails, open the failed step in GitHub Actions. If the app says disconnected, check `adb devices`, re-run `adb reverse`, and verify `http://127.0.0.1:8765/api/health` on the computer. If agents fail with Ollama errors, run `ollama list` and ensure the model is installed.
 
 This is an open-source prototype. No personal credentials should be committed to this public repository.
+
+## v1.7 engineering improvements
+
+- Android automatically polls the current task every 2.5 seconds and updates **each of the five robot statuses independently** from the Python event log. Task results appear when finished.
+- Eco, Balanced and Performance modes now change Ollama `num_predict` to 256, 512 and 1024 tokens respectively; these are output-token limits, not CPU/GPU speed controls. The selected mode is in-memory and resets on server restart.
+- The Python backend exposes `GET /api/performance`, reports its actual mode in health checks, and returns 404 for unknown tasks.
+- GitHub Actions now runs backend HTTP regression tests before building the Android APK.
+
+**Unfinished:** A true on-device Android model runtime, a functional movie renderer in this lightweight backend, automatic discovery of the computer without USB, live thermal readings, secure authenticated network access, and independent concurrent agents. This version is a sequential Ollama collective with animated avatars. A green GitHub Actions build and phone testing are still required for the v1.7 APK.
