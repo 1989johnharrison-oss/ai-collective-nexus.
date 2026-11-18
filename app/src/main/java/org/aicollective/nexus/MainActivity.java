@@ -34,10 +34,14 @@ public final class MainActivity extends Activity {
   scroll.addView(root);setContentView(scroll);
   title("AI COLLECTIVE NEXUS");
   label("Android controller • 12 GB device profile");
-  label("NEXUS v1.6 • LIVE BOT COLLECTIVE");
-  connectionStatus=label("Backend: not checked • USB connection required");
-  label("Python backend on your computer + Ollama model + adb reverse");
+  label("NEXUS v1.8 • PHONE-LOCAL BOT COLLECTIVE");
+  connectionStatus=label("Backend: not checked • same-phone local AI");
+  label("Run Nexus in Termux on this phone — no PC or USB needed");
   button("Check backend connection",()->request("GET","/api/health",null));
+  button("PHONE-ONLY SETUP INSTRUCTIONS",()->{
+   android.content.Intent browser=new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/1989johnharrison-oss/ai-collective-nexus."));
+   startActivity(browser);
+  });
   button("Refresh live bot activity",()->{if(currentTask!=null)request("GET","/api/tasks/"+currentTask,null);else request("GET","/api/agents",null);});
   title("THE BOT COLLECTIVE");
   robots=new RobotView(this);root.addView(robots,new LinearLayout.LayoutParams(-1,(int)(210*getResources().getDisplayMetrics().density)));
@@ -140,7 +144,7 @@ public final class MainActivity extends Activity {
       }
      }catch(Exception ignored){}
     });
-   }catch(Exception e){handler.post(()->{if(active){connectionStatus.setText("Backend: DISCONNECTED");taskRunning=false;handler.removeCallbacks(poll);output.setText("Backend unavailable. Run adb reverse tcp:8765 tcp:8765 and start the Python backend.\n"+e);}});}
+   }catch(Exception e){handler.post(()->{if(active){connectionStatus.setText("Backend: DISCONNECTED");taskRunning=false;handler.removeCallbacks(poll);output.setText("Phone AI is not running yet. Open Termux and start the local Nexus backend (see README).\n"+e);}});}
    finally{if(conn!=null)conn.disconnect();}
   });
  }
