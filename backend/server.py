@@ -14,6 +14,7 @@ ENGINE=os.getenv("NEXUS_ENGINE","llamacpp").lower()
 LLAMA_URL=os.getenv("LLAMA_URL","http://127.0.0.1:8080/v1/chat/completions")
 ROLES=[("planner","Break the request into a practical plan."),("researcher","Find relevant facts and identify uncertainty. Do not invent sources."),("engineer","Provide a concrete implementation or solution."),("critic","Check the preceding work for flaws, risks, and missing requirements."),("synthesizer","Combine the specialists' findings into a final helpful answer.")]
 LOCK=threading.Lock()
+TASK_STATES=("running","done","failed")
 MODE_LOCK=threading.Lock()
 MODE="balanced"
 LIMITS={"eco":256,"balanced":512,"performance":1024}
@@ -36,6 +37,15 @@ def infer(prompt):
   out=json.load(response)
  if ENGINE=="ollama":return out.get("response","")
  return out["choices"][0]["message"]["content"]
+
+def model_ready():
+ url="http://127.0.0.1:8080/health" if ENGINE!="ollama" else "http://127.0.0.1:11434/api/tags"
+ try:
+  with urllib.request.urlopen(url,timeout=2) as response:
+   if ENGINE=="ollama":return response.status==200
+   info=json.load(response)
+   return info.get("status")=="ok"
+ except Exception:return False
 
 def recall(prompt,limit=4):
  words=[w.lower() for w in prompt.split() if len(w)>3][:12]
@@ -69,17 +79,14 @@ class API(BaseHTTPRequestHandler):
   self.wfile.write(data)
  def do_GET(self):
   path=self.path.split("?")[0]
-  if path=="/api/health":return self.send(200,{"status":"ok","backend":ENGINE,"model":MODEL,"mode":MODE})
+  if path=="/api/health":return self.send(200,{"status":"ok","backend":ENGINE,"model":MODEL,"mode":MODE,"inference_ready":model_ready()})
   if path=="/api/performance":return self.send(200,{"mode":MODE,"max_output_tokens":LIMITS[MODE]})
   if path=="/api/knowledge":
    with db() as c:rows=c.execute("SELECT id,title,body FROM knowledge ORDER BY rowid DESC LIMIT 100").fetchall()
    return self.send(200,{"notes":[dict(zip(("id","title","body"),r)) for r in rows]})
   if path=="/api/model/status":
-   url="http://127.0.0.1:8080/health" if ENGINE!="ollama" else "http://127.0.0.1:11434/api/tags"
-   try:
-    with urllib.request.urlopen(url,timeout=3) as response:result=json.load(response)
-    return self.send(200,{"engine":ENGINE,"model":MODEL,"reachable":True,"detail":result.get("status","available")})
-   except Exception as e:return self.send(503,{"engine":ENGINE,"reachable":False,"error":str(e)})
+   ready=model_ready()
+   return self.send(200 if ready else 503,{"engine":ENGINE,"model":MODEL,"ready":ready})
   if path=="/api/agents":return self.send(200,{"agents":[{"id":name,"role":description} for name,description in ROLES]})
   if path=="/api/tasks":
    with db() as c: rows=c.execute("SELECT id,created,prompt,status,result FROM tasks ORDER BY created DESC LIMIT 30").fetchall()
@@ -114,6 +121,7 @@ class API(BaseHTTPRequestHandler):
   if self.path!="/api/tasks":return self.send(404,{"error":"Unknown endpoint"})
   prompt=body.get("prompt")
   if not isinstance(prompt,str) or not 1<=len(prompt.strip())<=12000:return self.send(400,{"error":"Enter a task"})
+  if not model_ready():return self.send(503,{"error":"Local AI model is not ready. Start llama-server in Termux first."})
   if not LOCK.acquire(False):return self.send(429,{"error":"An agent task is already running"})
   tid=uuid.uuid4().hex
   try:
