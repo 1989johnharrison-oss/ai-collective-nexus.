@@ -14,6 +14,7 @@ if [ ! -d "$ROOT/source/.git" ]; then
 else
  git -C "$ROOT/source" pull --ff-only
 fi
+cp "$ROOT/source/phone/start-phone.sh" "$ROOT/start-phone.sh"
 if [ ! -d "$ROOT/llama.cpp/.git" ]; then
  git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "$ROOT/llama.cpp"
 fi
