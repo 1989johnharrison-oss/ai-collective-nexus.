@@ -1,9 +1,9 @@
-# AI Collective Nexus v1.8 — Phone-local five-bot Android AI
+# AI Collective Nexus v1.9 — Phone-local five-bot Android AI
 
 **No computer, USB cable, paid AI subscription, API key or account registration is required for the local AI engine.** Android APK displays five animated bots and communicates with a Python + llama.cpp AI server running inside Termux **on the same phone**, via 127.0.0.1. This is genuine local model inference once the model has been downloaded and the server started. It is not yet an embedded Android inference engine: Termux must remain running.
 
 ## 1. Install the latest APK
-Open [GitHub Actions](https://github.com/1989johnharrison-oss/ai-collective-nexus./actions), select the latest **green** build, download artifact `AI-Collective-Nexus-APK`, extract the ZIP and install `app-debug.apk` over the previous APK. The app should show **NEXUS v1.8 • PHONE-LOCAL BOT COLLECTIVE**.
+Open [GitHub Actions](https://github.com/1989johnharrison-oss/ai-collective-nexus./actions), select the latest **green** build, download artifact `AI-Collective-Nexus-APK`, extract the ZIP and install `app-debug.apk` over the previous APK. The app should show **NEXUS v1.9 • PHONE-LOCAL BOT COLLECTIVE**.
 
 ## 2. Install phone-local AI (on your Samsung)
 Install **Termux from F-Droid or the official Termux GitHub releases**, not an outdated Play Store build. Open Termux and run:
@@ -44,3 +44,9 @@ If you still see the old screen, install the latest successful APK artifact. If 
 ## Keyless-first design decisions
 
 The local AI model is downloaded from a public GGUF model repository, not from a paid inference provider. The five agents reuse one model on the same device rather than loading five copies into RAM. The app's local API uses loopback only. **No credentials should be entered into Nexus or committed to GitHub.** Internet access is required for initial software/model downloads, but inference works offline after installation. Termux is a temporary integration step until an embedded Android native inference runtime is built and verified.
+
+## v1.9: persistent bot memory
+
+The Android screen now includes **Save knowledge** and **View saved knowledge** controls. Notes are stored in the local SQLite database in Termux, and relevant saved notes are retrieved into later specialist prompts. This is explicit user-approved memory, **not autonomous learning**. The **Check local AI model** button tests whether llama.cpp's local inference server is reachable. Backend HTTP tests include saving and retrieving notes and validation of malformed entries.
+
+The APK is still a frontend for a same-phone Termux process. No API keys or external paid services are required, but installation and a working model server are still prerequisites. Source commits are not proof that a GitHub Actions build or device test has passed.
