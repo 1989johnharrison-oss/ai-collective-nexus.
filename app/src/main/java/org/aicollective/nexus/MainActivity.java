@@ -31,6 +31,8 @@ public final class MainActivity extends Activity {
  private LinearLayout historyContainer;
  private TaskStore taskStore;
  private String lastTaskResponse="";
+ private String availableArtifactUrl=null;
+ private Button artifactButton;
  private TextView quickStatus;
  private TextView activitySummary;
  private TextView technicalDetails;
@@ -150,6 +152,9 @@ public final class MainActivity extends Activity {
   refreshDevice();
   beginPage(1);
   title("TASK RESULT");
+  artifactButton=new Button(this);artifactButton.setText("▶ Preview generated HTML game");artifactButton.setAllCaps(false);artifactButton.setTextColor(ACCENT);artifactButton.setBackground(shape(PANEL,0xff36516c));artifactButton.setVisibility(View.GONE);
+  artifactButton.setOnClickListener(v->{if(availableArtifactUrl!=null){android.content.Intent browser=new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse(BASE+availableArtifactUrl));startActivity(browser);}});
+  root.addView(artifactButton,new LinearLayout.LayoutParams(-1,dp(52)));
   output=label("Your completed task output will appear here.");
   output.setTextColor(TEXT);output.setTextIsSelectable(true);
   output.setBackground(shape(PANEL,0xff30435f));output.setPadding(dp(14),dp(12),dp(14),dp(12));
@@ -273,7 +278,7 @@ public final class MainActivity extends Activity {
    heading.setTextColor(TEXT);heading.setTextSize(14);heading.setTypeface(Typeface.DEFAULT,Typeface.BOLD);card.addView(heading);
    Button open=new Button(this);open.setAllCaps(false);open.setText("View result / agent details");open.setTextColor(ACCENT);open.setBackground(shape(0xff20334b,0xff36516c));
    final boolean onDevice=task.optBoolean("local_record",false);
-   open.setOnClickListener(v->{output.setText(result.isEmpty()?"No final result yet.":result);if(!onDevice)request("GET","/api/tasks/"+id,null);});
+   open.setOnClickListener(v->{output.setText(result.isEmpty()?"No final result yet.":result);availableArtifactUrl=null;artifactButton.setVisibility(View.GONE);if(!onDevice)request("GET","/api/tasks/"+id,null);});
    card.addView(open,new LinearLayout.LayoutParams(-1,dp(44)));
   }
  }
@@ -335,6 +340,10 @@ public final class MainActivity extends Activity {
    }else if(path.startsWith("/api/tasks/")){
     JSONObject task=json.optJSONObject("task");
     if(task!=null){
+     JSONObject artifact=json.optJSONObject("artifact");
+     String preview=artifact==null?"":artifact.optString("preview_url","");
+     availableArtifactUrl=preview.startsWith("/api/artifacts/")?preview:null;
+     if(artifactButton!=null)artifactButton.setVisibility(availableArtifactUrl==null?View.GONE:View.VISIBLE);
      String state=task.optString("status","unknown");
      org.json.JSONArray events=json.optJSONArray("events");
      StringBuilder view=new StringBuilder();
