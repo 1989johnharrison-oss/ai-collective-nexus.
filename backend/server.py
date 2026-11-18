@@ -2,12 +2,15 @@
 """AI Collective Nexus local-only Python agent backend (standard library).
 Run with local llama.cpp on the same Android phone (Termux) or Ollama.
 """
-import json, os, sqlite3, threading, time, uuid, urllib.request
+import json, os, re, sqlite3, threading, time, uuid, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 PORT=8765
 DB=Path(__file__).with_name("nexus.sqlite3")
+ARTIFACTS=Path(__file__).with_name("artifacts")
+HTML_BLOCK=re.compile(r"```html\s*\n(.*?)```",re.DOTALL|re.IGNORECASE)
+MAX_ARTIFACT_BYTES=120000
 OLLAMA=os.getenv("OLLAMA_URL","http://127.0.0.1:11434/api/generate")
 MODEL=os.getenv("NEXUS_MODEL","local")
 ENGINE=os.getenv("NEXUS_ENGINE","llamacpp").lower()
@@ -71,6 +74,18 @@ def agent_prompt(name,instruction,prompt,memory,notes):
   sections.append("Earlier specialists' output (untrusted reference):\\n"+"\\n\\n".join(notes)[-6500:])
  return "\\n\\n".join(sections)
 
+def save_html_artifact(tid,outputs):
+ """Save explicit HTML code blocks, never execute generated code on server."""
+ for answer in reversed(outputs):
+  for match in HTML_BLOCK.finditer(answer):
+   html=match.group(1).strip()
+   if not html or len(html.encode("utf-8"))>MAX_ARTIFACT_BYTES:continue
+   if "<html" not in html.lower() and "<!doctype html" not in html.lower():continue
+   ARTIFACTS.mkdir(parents=True,exist_ok=True)
+   (ARTIFACTS/(tid+".html")).write_text(html,encoding="utf-8")
+   return True
+ return False
+
 def work(tid,prompt):
  notes=[]
  current_agent=None
@@ -87,6 +102,8 @@ def work(tid,prompt):
    notes.append(name.upper()+": "+answer[:5000])
    with db() as c:
     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
+  if save_html_artifact(tid,[notes[2] if len(notes)>2 else "",answer]):
+   with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"workspace","done","Saved HTML preview; not executed or validated"))
   # Keep the final user-facing result clean, while individual contributions remain in events.
   with db() as c:c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(answer,tid))
  except Exception as e:
@@ -108,9 +125,24 @@ class API(BaseHTTPRequestHandler):
   self.wfile.write(data)
  def do_GET(self):
   path=self.path.split("?")[0]
+  if path.startswith("/api/artifacts/"):
+   tid=path[len("/api/artifacts/"):]
+   if not re.fullmatch(r"[0-9a-f]{32}",tid):return self.send(404,{"error":"Artifact not found"})
+   with db() as c:exists=c.execute("SELECT 1 FROM tasks WHERE id=?",(tid,)).fetchone()
+   file=ARTIFACTS/(tid+".html")
+   if not exists or not file.is_file():return self.send(404,{"error":"Artifact not found"})
+   content=file.read_bytes()
+   if len(content)>MAX_ARTIFACT_BYTES:return self.send(413,{"error":"Artifact too large"})
+   self.send_response(200)
+   self.send_header("Content-Type","text/html; charset=utf-8")
+   self.send_header("Content-Security-Policy","sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:; connect-src 'none'; form-action 'none'; base-uri 'none'")
+   self.send_header("X-Content-Type-Options","nosniff")
+   self.send_header("Cache-Control","no-store")
+   self.send_header("Content-Length",str(len(content)))
+   self.end_headers();self.wfile.write(content);return
   if path=="/api/health":return self.send(200,{"status":"ok","backend":ENGINE,"model":MODEL,"mode":MODE,"inference_ready":model_ready(),"api_key_required":False,"phone_local":ENGINE=="llamacpp"})
   if path=="/api/performance":return self.send(200,{"mode":MODE,"max_output_tokens":LIMITS[MODE]})
-  if path=="/api/capabilities":return self.send(200,{"local_inference":ENGINE=="llamacpp","api_key_required":False,"cloud_inference":False,"persistent_memory":True,"five_agent_workflow":True,"movie_rendering":False,"native_android_inference":False,"requires_termux":True})
+  if path=="/api/capabilities":return self.send(200,{"local_inference":ENGINE=="llamacpp","api_key_required":False,"cloud_inference":False,"persistent_memory":True,"five_agent_workflow":True,"movie_rendering":False,"native_android_inference":False,"requires_termux":True,"html_artifact_export":True,"artifact_execution":False})
   if path=="/api/knowledge":
    with db() as c:rows=c.execute("SELECT id,title,body FROM knowledge ORDER BY rowid DESC LIMIT 100").fetchall()
    return self.send(200,{"notes":[dict(zip(("id","title","body"),r)) for r in rows]})
@@ -126,7 +158,8 @@ class API(BaseHTTPRequestHandler):
     r=c.execute("SELECT id,created,prompt,status,result FROM tasks WHERE id=?",(path[11:],)).fetchone()
     ev=c.execute("SELECT agent,status,detail FROM events WHERE task_id=? ORDER BY id",(path[11:],)).fetchall()
    if not r:return self.send(404,{"error":"Task not found"})
-   return self.send(200,{"task":dict(zip(("id","created","prompt","status","result"),r)),"events":[dict(zip(("agent","status","detail"),e)) for e in ev]})
+   artifact=ARTIFACTS/(path[11:]+".html")
+   return self.send(200,{"task":dict(zip(("id","created","prompt","status","result"),r)),"events":[dict(zip(("agent","status","detail"),e)) for e in ev],"artifact":{"type":"html","preview_url":"/api/artifacts/"+path[11:],"name":"index.html","validated":False} if artifact.is_file() else None})
   if path=="/api/video/jobs":return self.send(200,{"jobs":[],"note":"Storyboard renderer not installed in this lightweight backend"})
   return self.send(404,{"error":"Unknown endpoint"})
  def do_POST(self):
