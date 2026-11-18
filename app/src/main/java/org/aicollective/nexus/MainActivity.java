@@ -357,7 +357,7 @@ public final class MainActivity extends Activity {
    }else if(path.equals("/api/tasks")&&"POST".equals("POST")&&json.has("id")){
     activity("◉ TASK STARTED\\nYour collective is processing the request. Agent updates will appear here.");
     status("Task accepted • agents starting");
-   }else if(path.equals("/api/tasks")){
+   }else if(path.equals("/api/tasks")&&json.has("tasks")){
     renderHistory(json.optJSONArray("tasks"));
     status("Task history loaded");
    }else if(path.equals("/api/agents")){
