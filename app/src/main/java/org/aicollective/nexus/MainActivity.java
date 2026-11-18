@@ -29,6 +29,7 @@ public final class MainActivity extends Activity {
  private static final int BG=0xff0b1020, PANEL=0xff17233b, TEXT=0xffedf4ff, MUTED=0xffa8b8d2, ACCENT=0xff5eead4;
  private TextView output;
  private LinearLayout historyContainer;
+ private TaskStore taskStore;
  private String lastTaskResponse="";
  private TextView quickStatus;
  private TextView activitySummary;
@@ -57,6 +58,7 @@ public final class MainActivity extends Activity {
  private final Runnable poll=new Runnable(){@Override public void run(){if(active&&taskRunning&&currentTask!=null&&!pollInFlight){pollInFlight=true;request("GET","/api/tasks/"+currentTask,null);}}};
  @Override public void onCreate(Bundle savedInstanceState){
   super.onCreate(savedInstanceState);
+  taskStore=new TaskStore(this);
   getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
   getWindow().getDecorView().setSystemUiVisibility(0);
   ScrollView scroll=new ScrollView(this);
@@ -127,8 +129,9 @@ public final class MainActivity extends Activity {
    if(useCloud){runCloudTask(p);return;}
    try{JSONObject data=new JSONObject();data.put("prompt",p);robots.resetStates();request("POST","/api/tasks",data);}catch(Exception e){output.setText(e.toString());}
   });
-  button("↻ Load saved task history",()->request("GET","/api/tasks",null));
+  button("↻ Load saved task history",()->loadTaskHistory());
   historyContainer=new LinearLayout(this);historyContainer.setOrientation(LinearLayout.VERTICAL);root.addView(historyContainer);
+  loadTaskHistory();
   title("Performance");
   button("Eco",()->setMode("eco"));
   button("Balanced",()->setMode("balanced"));
@@ -224,7 +227,8 @@ public final class MainActivity extends Activity {
     }
     String result=context.toString();
     handler.post(()->{if(active){output.setText("CLOUD TASK COMPLETED\\n"+result);activity("✓ CLOUD TASK COMPLETED\\n"+concise(result,650));status("Cloud task completed");}});
-    saveCloudHistory(userPrompt,result,provider);
+    try{taskStore.save(provider,userPrompt,result);handler.post(()->{if(active)loadTaskHistory();});}
+    catch(Exception storageError){handler.post(()->{if(active)status("Cloud completed • could not save on device: "+storageError.getMessage());});}
    }catch(Exception e){
     String error=e.getMessage();
     handler.post(()->{if(active)output.setText("Cloud task stopped: "+error+"\\nYour key was not saved.");});
@@ -245,6 +249,11 @@ public final class MainActivity extends Activity {
    handler.post(()->{if(active)status("Cloud result ready • local backend offline, history not saved");});
   }finally{if(conn!=null)conn.disconnect();}
  }
+ private void loadTaskHistory(){
+  try{renderHistory(taskStore.recent());status("On-device cloud history loaded");}
+  catch(Exception e){status("Cannot read on-device history: "+e.getMessage());}
+  request("GET","/api/tasks",null);
+ }
  private void renderHistory(org.json.JSONArray tasks){
   if(historyContainer==null)return;
   historyContainer.removeAllViews();
@@ -263,7 +272,8 @@ public final class MainActivity extends Activity {
    TextView heading=new TextView(this);heading.setText(("done".equals(taskState)?"✓ ":"running".equals(taskState)?"◉ ":"! ")+taskState.toUpperCase()+" • "+concise(taskPrompt,110));
    heading.setTextColor(TEXT);heading.setTextSize(14);heading.setTypeface(Typeface.DEFAULT,Typeface.BOLD);card.addView(heading);
    Button open=new Button(this);open.setAllCaps(false);open.setText("View result / agent details");open.setTextColor(ACCENT);open.setBackground(shape(0xff20334b,0xff36516c));
-   open.setOnClickListener(v->{output.setText(result.isEmpty()?"No final result yet.":result);request("GET","/api/tasks/"+id,null);});
+   final boolean onDevice=task.optBoolean("local_record",false);
+   open.setOnClickListener(v->{output.setText(result.isEmpty()?"No final result yet.":result);if(!onDevice)request("GET","/api/tasks/"+id,null);});
    card.addView(open,new LinearLayout.LayoutParams(-1,dp(44)));
   }
  }
@@ -358,7 +368,10 @@ public final class MainActivity extends Activity {
     activity("◉ TASK STARTED\\nYour collective is processing the request. Agent updates will appear here.");
     status("Task accepted • agents starting");
    }else if(path.equals("/api/tasks")&&json.has("tasks")){
-    renderHistory(json.optJSONArray("tasks"));
+    org.json.JSONArray combined=taskStore.recent();
+    org.json.JSONArray local=json.optJSONArray("tasks");
+    if(local!=null)for(int i=0;i<local.length();i++)combined.put(local.optJSONObject(i));
+    renderHistory(combined);
     status("Task history loaded");
    }else if(path.equals("/api/agents")){
     activity("◉ AGENT STATUS\\n"+concise(raw,450));
@@ -457,5 +470,5 @@ public final class MainActivity extends Activity {
    finally{if(conn!=null)conn.disconnect();}
   });
  }
- @Override protected void onDestroy(){active=false;handler.removeCallbacks(poll);executor.shutdownNow();super.onDestroy();}
+ @Override protected void onDestroy(){active=false;handler.removeCallbacks(poll);executor.shutdownNow();if(taskStore!=null)taskStore.close();super.onDestroy();}
 }
