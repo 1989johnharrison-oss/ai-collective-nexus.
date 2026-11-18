@@ -66,6 +66,15 @@ class BackendTests(unittest.TestCase):
     with patch.object(server.json,"load",return_value={"choices":[{"message":{"content":"Hi"}}]}):
      self.assertEqual(server.infer("Hello"),"Hi")
   finally:server.ENGINE=old_engine
+ def test_persistent_knowledge(self):
+  status,saved=self.call("/api/knowledge",{"title":"Local storage","body":"Bots can remember approved notes."})
+  self.assertEqual(status,201)
+  status,items=self.call("/api/knowledge")
+  self.assertEqual(status,200)
+  self.assertTrue(any(note["id"]==saved["id"] for note in items["notes"]))
+  self.assertIn("Local storage",server.recall("Local storage"))
+ def test_invalid_knowledge(self):
+  self.assertEqual(self.call("/api/knowledge",{"title":"","body":"x"})[0],400)
  def test_movie_not_falsely_advertised(self):
   self.assertEqual(self.call("/api/video",{"scenes":["x"]})[0],501)
 
