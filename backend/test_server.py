@@ -90,6 +90,15 @@ class BackendTests(unittest.TestCase):
    status,body=self.call("/api/model/status")
   self.assertEqual(status,200)
   self.assertTrue(body["ready"])
+ def test_cloud_history_record(self):
+  status,saved=self.call("/api/cloud/history",{"prompt":"Design a game","result":"Playable prototype plan","provider":"ollama"})
+  self.assertEqual(status,201)
+  status,history=self.call("/api/tasks")
+  self.assertEqual(status,200)
+  self.assertTrue(any(t["id"]==saved["id"] and t["result"]=="Playable prototype plan" for t in history["tasks"]))
+ def test_cloud_history_rejects_invalid_records(self):
+  for record in ({"prompt":"","result":"x","provider":"ollama"},{"prompt":"x","result":"","provider":"ollama"},{"prompt":"x","result":"y","provider":"unknown"}):
+   self.assertEqual(self.call("/api/cloud/history",record)[0],400)
  def test_movie_not_falsely_advertised(self):
   self.assertEqual(self.call("/api/video",{"scenes":["x"]})[0],501)
 
