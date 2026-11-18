@@ -21,6 +21,11 @@ public final class MainActivity extends Activity {
  private final ExecutorService executor=Executors.newSingleThreadExecutor();
  private final Handler handler=new Handler(Looper.getMainLooper());
  private LinearLayout root;
+ private LinearLayout screenRoot;
+ private LinearLayout[] pages=new LinearLayout[5];
+ private Button[] navButtons=new Button[5];
+ private ScrollView mainScroll;
+ private int currentPage=0;
  private static final int BG=0xff0b1020, PANEL=0xff17233b, TEXT=0xffedf4ff, MUTED=0xffa8b8d2, ACCENT=0xff5eead4;
  private TextView output;
  private TextView quickStatus;
@@ -53,12 +58,17 @@ public final class MainActivity extends Activity {
   getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
   getWindow().getDecorView().setSystemUiVisibility(0);
   ScrollView scroll=new ScrollView(this);
+  mainScroll=scroll;
+  scroll.setFillViewport(true);
   scroll.setBackgroundColor(BG);
-  root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(22),dp(18),dp(34));
-  scroll.addView(root);setContentView(scroll);
+  screenRoot=new LinearLayout(this);screenRoot.setOrientation(LinearLayout.VERTICAL);screenRoot.setPadding(dp(14),dp(18),dp(14),dp(30));
+  root=screenRoot;
+  scroll.addView(screenRoot);setContentView(scroll);
   title("AI COLLECTIVE NEXUS");
   label("YOUR FIVE-AGENT AI WORKSPACE");
-  label("NEXUS v2.4 • COLLECTIVE DASHBOARD");
+  label("NEXUS • DEVELOPMENT DASHBOARD");
+  addNavigation();
+  beginPage(0);
   connectionStatus=label("Backend: not checked • same-phone local AI");
   quickStatus=label("● READY  •  Choose an engine and launch a task");
   quickStatus.setTextColor(ACCENT);quickStatus.setBackground(shape(PANEL,0xff36516c));quickStatus.setPadding(dp(14),dp(12),dp(14),dp(12));
@@ -81,6 +91,7 @@ public final class MainActivity extends Activity {
   label("Agent colours indicate their roles. Task updates appear in Live Activity above.");
   button("Check bot status",()->request("GET","/api/agents",null));
   button("Check local AI model",()->request("GET","/api/model/status",null));
+  beginPage(2);
   title("PERSISTENT BOT MEMORY");
   EditText memoryTitle=new EditText(this);memoryTitle.setHint("Knowledge title");field(memoryTitle);
   EditText memoryBody=new EditText(this);memoryBody.setHint("What should the bots remember?");memoryBody.setMinLines(3);field(memoryBody);
@@ -91,6 +102,7 @@ public final class MainActivity extends Activity {
    }catch(Exception e){output.setText(e.toString());}
   });
   button("View saved knowledge",()->request("GET","/api/knowledge",null));
+  beginPage(4);
   title("AI ENGINE • LOCAL OR OPTIONAL CLOUD");
   label("Choose your AI engine. Ollama Cloud works with your existing Ollama API key; local mode works offline once installed.");
   button("Use local AI (offline)",()->{useCloud=false;output.setText("Local AI selected. Start the local model in Termux.");});
@@ -104,7 +116,8 @@ public final class MainActivity extends Activity {
   field(cloudKey);
   modelInput=new EditText(this);modelInput.setHint("Cloud model name (optional override)");field(modelInput);
   button("Clear cloud key",()->{cloudKey.setText("");output.setText("Cloud key cleared from input.");});
-  title("AI Agents");
+  beginPage(1);
+  title("AI TASKS");
   prompt=new EditText(this);prompt.setHint("Enter an agent task");prompt.setMinLines(3);field(prompt);
   button("Launch task",()->{
    String p=prompt.getText().toString().trim();
@@ -117,18 +130,52 @@ public final class MainActivity extends Activity {
   button("Eco",()->setMode("eco"));
   button("Balanced",()->setMode("balanced"));
   button("Performance",()->setMode("performance"));
-  title("Movie Studio");
+  beginPage(3);
+  title("MOVIE STUDIO");
   filmTitle=new EditText(this);filmTitle.setHint("Movie title");field(filmTitle);
   filmScenes=new EditText(this);filmScenes.setHint("One scene caption per line (up to 60)");filmScenes.setMinLines(4);field(filmScenes);
   button("Render storyboard movie",()->renderMovie());
   button("Recent video jobs",()->request("GET","/api/video/jobs",null));
   button("Check current movie",()->{if(currentJob==null)output.setText("Start a movie first");else request("GET","/api/video/"+currentJob,null);});
+  beginPage(4);
   title("DEVICE HEALTH");
   deviceStatus=label("Checking...");
   button("Refresh device status",()->refreshDevice());
   refreshDevice();
   title("RESPONSE");
   output=label("Ready — choose cloud mode for Ollama, or start your local backend.");
+  showPage(0);
+ }
+ private void addNavigation(){
+  String[] labels={"⌂ Home","◈ Tasks","▤ Memory","▣ Studio","⚙ Settings"};
+  LinearLayout row=new LinearLayout(this);row.setOrientation(LinearLayout.HORIZONTAL);
+  for(int i=0;i<labels.length;i++){
+   final int index=i;
+   Button b=new Button(this);b.setText(labels[i]);b.setAllCaps(false);b.setTextSize(11);
+   b.setTextColor(TEXT);b.setPadding(0,0,0,0);
+   LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(0,dp(48),1);
+   lp.setMargins(dp(2),dp(4),dp(2),dp(8));row.addView(b,lp);
+   b.setOnClickListener(v->showPage(index));navButtons[i]=b;
+  }
+  screenRoot.addView(row);
+ }
+ private void beginPage(int index){
+  if(pages[index]==null){
+   LinearLayout page=new LinearLayout(this);page.setOrientation(LinearLayout.VERTICAL);
+   pages[index]=page;screenRoot.addView(page);
+  }
+  root=pages[index];
+ }
+ private void showPage(int index){
+  currentPage=index;
+  for(int i=0;i<pages.length;i++){
+   if(pages[i]!=null)pages[i].setVisibility(i==index?View.VISIBLE:View.GONE);
+   if(navButtons[i]!=null){
+    navButtons[i].setBackground(shape(i==index?0xff24565a:PANEL,i==index?ACCENT:0xff30435f));
+    navButtons[i].setTextColor(i==index?ACCENT:TEXT);
+   }
+  }
+  if(mainScroll!=null)mainScroll.post(()->mainScroll.smoothScrollTo(0,0));
  }
  private void runCloudTask(String userPrompt){
   final String key=cloudKey.getText().toString().trim();
