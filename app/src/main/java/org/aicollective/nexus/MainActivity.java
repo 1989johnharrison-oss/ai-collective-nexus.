@@ -23,6 +23,7 @@ public final class MainActivity extends Activity {
  private LinearLayout root;
  private static final int BG=0xff0b1020, PANEL=0xff17233b, TEXT=0xffedf4ff, MUTED=0xffa8b8d2, ACCENT=0xff5eead4;
  private TextView output;
+ private TextView quickStatus;
  private EditText prompt;
  private EditText cloudKey;
  private EditText modelInput;
