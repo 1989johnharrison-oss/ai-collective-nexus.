@@ -49,7 +49,7 @@ public final class MainActivity extends Activity {
   scroll.addView(root);setContentView(scroll);
   title("AI COLLECTIVE NEXUS");
   label("YOUR FIVE-AGENT AI WORKSPACE");
-  label("NEXUS v2.1 • OLLAMA CLOUD + EFFICIENT AGENTS");
+  label("NEXUS v2.2 • DARK EDITION • OLLAMA CLOUD");
   connectionStatus=label("Backend: not checked • same-phone local AI");
   label("Cloud mode works without Termux. Local mode requires the phone backend.");
   button("Check LOCAL backend connection",()->request("GET","/api/health",null));
