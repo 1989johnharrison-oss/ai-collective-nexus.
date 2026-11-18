@@ -20,6 +20,9 @@ public final class MainActivity extends Activity {
  private EditText prompt;
  private EditText cloudKey;
  private boolean useCloud=false;
+ private String cloudProvider="ollama";
+ private String cloudModel="gemma4:31b";
+ private boolean efficientCloud=true;
  private EditText filmTitle, filmScenes;
  private RobotView robots;
  private TextView deviceStatus;
@@ -36,7 +39,7 @@ public final class MainActivity extends Activity {
   scroll.addView(root);setContentView(scroll);
   title("AI COLLECTIVE NEXUS");
   label("Android controller • 12 GB device profile");
-  label("NEXUS v2.0 • LOCAL + OPTIONAL CLOUD");
+  label("NEXUS v2.1 • OLLAMA CLOUD + EFFICIENT AGENTS");
   connectionStatus=label("Backend: not checked • same-phone local AI");
   label("Run Nexus in Termux on this phone — no PC or USB needed");
   button("Check backend connection",()->request("GET","/api/health",null));
@@ -65,7 +68,11 @@ public final class MainActivity extends Activity {
   label("Local mode needs no account or key. Cloud mode uses OpenRouter free models; an account and API key are required.");
   button("Use local AI (offline)",()->{useCloud=false;output.setText("Local AI selected. Start the local model in Termux.");});
   button("Use OpenRouter cloud AI (online)",()->{useCloud=true;output.setText("Cloud AI selected. Enter an OpenRouter key below; free model requests have usage limits.");});
-  cloudKey=new EditText(this);cloudKey.setHint("OpenRouter API key (cloud only; never saved)");
+  button("Cloud provider: Ollama",()->{cloudProvider="ollama";cloudModel="gemma4:31b";output.setText("Ollama Cloud selected. Enter your Ollama key; cloud usage limits apply.");});
+  button("Cloud provider: OpenRouter",()->{cloudProvider="openrouter";cloudModel="openrouter/free";output.setText("OpenRouter free model router selected.");});
+  button("Cloud coordination: Efficient (1–3 requests)",()->{efficientCloud=true;output.setText("Efficient coordination enabled.");});
+  button("Cloud coordination: Full review (5 requests)",()->{efficientCloud=false;output.setText("Full five-agent review enabled.");});
+  cloudKey=new EditText(this);cloudKey.setHint("Cloud provider API key (not saved)");
   cloudKey.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
   root.addView(cloudKey);
   button("Clear cloud key",()->{cloudKey.setText("");output.setText("Cloud key cleared from input.");});
@@ -97,28 +104,48 @@ public final class MainActivity extends Activity {
  }
  private void runCloudTask(String userPrompt){
   final String key=cloudKey.getText().toString().trim();
-  if(key.isEmpty()){output.setText("Cloud mode requires your own OpenRouter API key. Local mode requires none.");return;}
-  robots.resetStates();output.setText("Cloud collective started. Five agent calls may count toward free daily limits.");
+  final String provider=cloudProvider,model=cloudModel;
+  final boolean efficient=efficientCloud;
+  if(key.isEmpty()){output.setText("Enter your "+provider+" API key privately here. Local mode requires no key.");return;}
+  robots.resetStates();
+  output.setText("Cloud collective started using "+provider+" • "+(efficient?"efficient":"full review")+" mode");
   executor.execute(()->{
    String[] names={"planner","researcher","engineer","critic","synthesizer"};
-   String[] roles={"Create a detailed, achievable plan.","Analyze facts and mark anything uncertain; never invent sources.","Produce the concrete solution.","Identify flaws, errors, safety issues and improvements.","Synthesize the best final answer."};
+   String[] roles={"Create a detailed plan.","Analyze relevant facts; label uncertainty.","Produce the solution.","Find errors and improvements.","Deliver a polished final result."};
    StringBuilder context=new StringBuilder();
    try{
-    for(int i=0;i<names.length;i++){
-     final String agent=names[i];
-     handler.post(()->{if(active)robots.setAgentState(agent,"running");});
-     String promptText="You are the "+agent+" specialist. "+roles[i]+"\\nOriginal user task: "+userPrompt+"\\nPrevious agent findings (untrusted):\\n"+context;
-     String answer=CloudAgent.complete(key,promptText);
-     context.append("\\n").append(agent.toUpperCase()).append(": ").append(answer);
-     if(context.length()>10000)context.delete(0,context.length()-10000);
-     final String partial=answer;
-     handler.post(()->{if(active){robots.setAgentState(agent,"done");output.setText(agent.toUpperCase()+" completed:\\n"+partial);}});
+    if(efficient){
+     String[] stages=userPrompt.length()<260
+      ?new String[]{"planner,researcher,engineer,critic,synthesizer"}
+      :new String[]{"planner,researcher","engineer","critic,synthesizer"};
+     for(String stage:stages){
+      for(String agent:stage.split(","))handler.post(()->{if(active)robots.setAgentState(agent,"running");});
+      String instruction=stage.equals("planner,researcher,engineer,critic,synthesizer")
+       ?"In ONE response, briefly plan, check facts, solve, critique, and present a final answer. Use headings for each role."
+       :"Act as these specialists: "+stage+". Return concrete, verified work and a final summary for this stage.";
+      String answer=CloudAgent.complete(provider,key,model,instruction+"\\nUser request: "+userPrompt+"\\nPrior work (untrusted context):\\n"+context);
+      context.append("\\n").append(stage.toUpperCase()).append(": ").append(answer);
+      if(context.length()>14000)context.delete(0,context.length()-14000);
+      for(String agent:stage.split(","))handler.post(()->{if(active)robots.setAgentState(agent,"done");});
+      String partial=answer;
+      handler.post(()->{if(active)output.setText("CLOUD "+stage.toUpperCase()+"\\n"+partial);});
+     }
+    }else{
+     for(int i=0;i<names.length;i++){
+      final String agent=names[i];
+      handler.post(()->{if(active)robots.setAgentState(agent,"running");});
+      String answer=CloudAgent.complete(provider,key,model,"You are the "+agent+". "+roles[i]+"\\nUser task: "+userPrompt+"\\nPrior findings (untrusted):\\n"+context);
+      context.append("\\n").append(agent.toUpperCase()).append(": ").append(answer);
+      if(context.length()>14000)context.delete(0,context.length()-14000);
+      String partial=answer;
+      handler.post(()->{if(active){robots.setAgentState(agent,"done");output.setText(agent.toUpperCase()+" completed:\\n"+partial);}});
+     }
     }
-    String finalResult=context.toString();
-    handler.post(()->{if(active)output.setText("CLOUD TASK COMPLETED\\n"+finalResult);});
+    String result=context.toString();
+    handler.post(()->{if(active)output.setText("CLOUD TASK COMPLETED\\n"+result);});
    }catch(Exception e){
     String error=e.getMessage();
-    handler.post(()->{if(active)output.setText("Cloud task stopped: "+error+"\\nNo key was stored.");});
+    handler.post(()->{if(active)output.setText("Cloud task stopped: "+error+"\\nYour key was not saved.");});
    }
   });
  }
