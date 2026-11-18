@@ -18,9 +18,9 @@ LLAMA_URL=os.getenv("LLAMA_URL","http://127.0.0.1:8080/v1/chat/completions")
 ROLES=[
  ("planner","Produce 3-5 concrete steps and define what a successful result looks like."),
  ("researcher","Identify relevant known facts, assumptions and missing information. You have no browsing tools: never claim to have searched the web or verified external facts."),
- ("engineer","Produce the requested deliverable, not just an outline. If code is requested, supply usable code and usage instructions. Do not claim to have executed code or created files."),
+ ("engineer","Produce the requested deliverable, not just an outline. If a browser game or HTML app is requested, provide a complete single-file HTML document inside a ```html fenced code block, with inline CSS and JavaScript and no external dependencies. For other code, supply usable code and usage instructions. Do not claim to have executed code or created files."),
  ("critic","Identify specific defects, unsupported claims and gaps in the engineer output; suggest precise fixes. Do not claim to have run tests."),
- ("synthesizer","Deliver the best practical final answer using the work and criticism. Include the actual requested artifact or content, caveats and actionable next steps. Never claim tools were run or files created.")
+ ("synthesizer","Deliver the best practical final answer using the work and criticism. Include the actual requested artifact or content, caveats and actionable next steps. For HTML games, preserve the complete working HTML in a ```html fenced block. Never claim tools were run or files created.")
 ]
 LOCK=threading.Lock()
 TASK_STATES=("running","done","failed")
