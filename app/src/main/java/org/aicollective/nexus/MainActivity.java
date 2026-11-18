@@ -51,6 +51,8 @@ public final class MainActivity extends Activity {
   label("YOUR FIVE-AGENT AI WORKSPACE");
   label("NEXUS v2.2 • DARK EDITION • OLLAMA CLOUD");
   connectionStatus=label("Backend: not checked • same-phone local AI");
+  quickStatus=label("STATUS • Ready. Tap any control to see its result here.");
+  quickStatus.setTextColor(ACCENT);quickStatus.setBackground(shape(PANEL,0xff36516c));quickStatus.setPadding(dp(14),dp(12),dp(14),dp(12));
   label("Cloud mode works without Termux. Local mode requires the phone backend.");
   button("Check LOCAL backend connection",()->request("GET","/api/health",null));
   button("PHONE-ONLY SETUP INSTRUCTIONS",()->{
@@ -119,7 +121,7 @@ public final class MainActivity extends Activity {
   final boolean efficient=efficientCloud;
   if(key.isEmpty()){output.setText("Enter your "+provider+" API key privately here. Local mode requires no key.");return;}
   robots.resetStates();
-  output.setText("Cloud collective started using "+provider+" • "+(efficient?"efficient":"full review")+" mode");
+  status("Cloud collective started using "+provider+" • "+(efficient?"efficient":"full review")+" mode");
   executor.execute(()->{
    String[] names={"planner","researcher","engineer","critic","synthesizer"};
    String[] roles={"Create a detailed plan.","Analyze relevant facts; label uncertainty.","Produce the solution.","Find errors and improvements.","Deliver a polished final result."};
@@ -186,6 +188,7 @@ public final class MainActivity extends Activity {
   try{JSONObject body=new JSONObject();body.put("mode",mode);request("POST","/api/performance",body);}
   catch(Exception e){output.setText(e.toString());}
  }
+ private void status(String message){if(quickStatus!=null)quickStatus.setText("STATUS • "+message);if(output!=null)output.setText(message);}
  private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+0.5f);}
  private GradientDrawable shape(int color,int stroke){
   GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(16));
@@ -210,10 +213,11 @@ public final class MainActivity extends Activity {
   Button b=new Button(this);b.setAllCaps(false);b.setText(name);b.setTextColor(TEXT);b.setTextSize(15);
   b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
   b.setBackground(shape(PANEL,0xff36516c));b.setPadding(dp(14),dp(9),dp(14),dp(9));
-  b.setOnClickListener(v->fn.run());
+  b.setOnClickListener(v->{status("Tapped: "+name);try{fn.run();}catch(Exception e){status("Error: "+e.getMessage());}});
   LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(52));lp.setMargins(0,dp(4),0,dp(8));root.addView(b,lp);
  }
  private void request(String method,String path,JSONObject payload){
+  status("Connecting to "+path+" …");
   executor.execute(()->{
    HttpURLConnection conn=null;
    try{
@@ -228,8 +232,8 @@ public final class MainActivity extends Activity {
     String result="HTTP "+code+"\n"+buf.toString("UTF-8");
     handler.post(()->{
      if(!active)return;
-     output.setText(result);
-     if(path.equals("/api/health"))connectionStatus.setText("Backend: CONNECTED");
+     status(result.length()>420?result.substring(0,420)+"…":result);
+     if(path.equals("/api/health"))connectionStatus.setText(code<400?"Backend: CONNECTED":"Backend: HTTP "+code);
      try{
       JSONObject json=new JSONObject(result.substring(result.indexOf("{")));
       if(path.equals("/api/tasks")&&method.equals("POST")&&code<400){
@@ -255,7 +259,7 @@ public final class MainActivity extends Activity {
       }
      }catch(Exception ignored){}
     });
-   }catch(Exception e){handler.post(()->{if(active){connectionStatus.setText("Backend: DISCONNECTED");taskRunning=false;handler.removeCallbacks(poll);output.setText("Phone AI is not running yet. Open Termux and start the local Nexus backend (see README).\n"+e);}});}
+   }catch(Exception e){handler.post(()->{if(active){connectionStatus.setText("Backend: DISCONNECTED");taskRunning=false;handler.removeCallbacks(poll);status("Local connection error: "+e.getClass().getSimpleName()+": "+e.getMessage());}});}
    finally{if(conn!=null)conn.disconnect();}
   });
  }
