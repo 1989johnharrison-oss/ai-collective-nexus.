@@ -12,6 +12,9 @@ OLLAMA=os.getenv("OLLAMA_URL","http://127.0.0.1:11434/api/generate")
 MODEL=os.getenv("NEXUS_MODEL","gemma3:1b")
 ROLES=[("planner","Break the request into a practical plan."),("researcher","Find relevant facts and identify uncertainty. Do not invent sources."),("engineer","Provide a concrete implementation or solution."),("critic","Check the preceding work for flaws, risks, and missing requirements."),("synthesizer","Combine the specialists' findings into a final helpful answer.")]
 LOCK=threading.Lock()
+MODE_LOCK=threading.Lock()
+MODE="balanced"
+LIMITS={"eco":256,"balanced":512,"performance":1024}
 def db():
  c=sqlite3.connect(DB,timeout=20)
  c.execute("CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, created REAL, prompt TEXT, status TEXT, result TEXT)")
@@ -20,7 +23,7 @@ def db():
  c.commit()
  return c
 def ollama(prompt):
- data=json.dumps({"model":MODEL,"prompt":prompt,"stream":False,"options":{"num_predict":500}}).encode()
+ data=json.dumps({"model":MODEL,"prompt":prompt,"stream":False,"options":{"num_predict":LIMITS[MODE]}}).encode()
  req=urllib.request.Request(OLLAMA,data=data,headers={"Content-Type":"application/json"})
  with urllib.request.urlopen(req,timeout=180) as response:
   out=json.load(response)
@@ -51,7 +54,8 @@ class API(BaseHTTPRequestHandler):
   self.wfile.write(data)
  def do_GET(self):
   path=self.path.split("?")[0]
-  if path=="/api/health":return self.send(200,{"status":"ok","backend":"ollama","model":MODEL,"mode":"balanced"})
+  if path=="/api/health":return self.send(200,{"status":"ok","backend":"ollama","model":MODEL,"mode":MODE})
+  if path=="/api/performance":return self.send(200,{"mode":MODE,"max_output_tokens":LIMITS[MODE]})
   if path=="/api/agents":return self.send(200,{"agents":[{"id":name,"role":description} for name,description in ROLES]})
   if path=="/api/tasks":
    with db() as c: rows=c.execute("SELECT id,created,prompt,status,result FROM tasks ORDER BY created DESC LIMIT 30").fetchall()
@@ -60,7 +64,8 @@ class API(BaseHTTPRequestHandler):
    with db() as c:
     r=c.execute("SELECT id,created,prompt,status,result FROM tasks WHERE id=?",(path[11:],)).fetchone()
     ev=c.execute("SELECT agent,status,detail FROM events WHERE task_id=? ORDER BY id",(path[11:],)).fetchall()
-   return self.send(200,{"task":dict(zip(("id","created","prompt","status","result"),r)) if r else None,"events":[dict(zip(("agent","status","detail"),e)) for e in ev]})
+   if not r:return self.send(404,{"error":"Task not found"})
+   return self.send(200,{"task":dict(zip(("id","created","prompt","status","result"),r)),"events":[dict(zip(("agent","status","detail"),e)) for e in ev]})
   if path=="/api/video/jobs":return self.send(200,{"jobs":[],"note":"Storyboard renderer not installed in this lightweight backend"})
   return self.send(404,{"error":"Unknown endpoint"})
  def do_POST(self):
@@ -72,7 +77,9 @@ class API(BaseHTTPRequestHandler):
   except (ValueError,TypeError):return self.send(400,{"error":"Invalid JSON"})
   if self.path=="/api/performance":
    if body.get("mode") not in ("eco","balanced","performance"):return self.send(400,{"error":"Unknown mode"})
-   return self.send(200,{"mode":body["mode"],"note":"Display preference only; Ollama settings are not changed"})
+   global MODE
+   with MODE_LOCK:MODE=body["mode"]
+   return self.send(200,{"mode":MODE,"max_output_tokens":LIMITS[MODE]})
   if self.path=="/api/video":return self.send(501,{"error":"Video rendering requires the full v1.5 Python backend and FFmpeg"})
   if self.path!="/api/tasks":return self.send(404,{"error":"Unknown endpoint"})
   prompt=body.get("prompt")
