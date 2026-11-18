@@ -25,6 +25,7 @@ public final class MainActivity extends Activity {
  private TextView output;
  private EditText prompt;
  private EditText cloudKey;
+ private EditText modelInput;
  private boolean useCloud=false;
  private String cloudProvider="ollama";
  private String cloudModel="gemma4:31b";
@@ -84,6 +85,7 @@ public final class MainActivity extends Activity {
   cloudKey=new EditText(this);cloudKey.setHint("Cloud provider API key (not saved)");
   cloudKey.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
   field(cloudKey);
+  modelInput=new EditText(this);modelInput.setHint("Cloud model name (optional override)");field(modelInput);
   button("Clear cloud key",()->{cloudKey.setText("");output.setText("Cloud key cleared from input.");});
   title("AI Agents");
   prompt=new EditText(this);prompt.setHint("Enter an agent task");prompt.setMinLines(3);field(prompt);
@@ -113,7 +115,7 @@ public final class MainActivity extends Activity {
  }
  private void runCloudTask(String userPrompt){
   final String key=cloudKey.getText().toString().trim();
-  final String provider=cloudProvider,model=cloudModel;
+  final String provider=cloudProvider,model=modelInput.getText().toString().trim().isEmpty()?cloudModel:modelInput.getText().toString().trim();
   final boolean efficient=efficientCloud;
   if(key.isEmpty()){output.setText("Enter your "+provider+" API key privately here. Local mode requires no key.");return;}
   robots.resetStates();
