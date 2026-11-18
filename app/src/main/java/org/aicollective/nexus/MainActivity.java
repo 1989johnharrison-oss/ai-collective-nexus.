@@ -28,6 +28,8 @@ public final class MainActivity extends Activity {
  private int currentPage=0;
  private static final int BG=0xff0b1020, PANEL=0xff17233b, TEXT=0xffedf4ff, MUTED=0xffa8b8d2, ACCENT=0xff5eead4;
  private TextView output;
+ private LinearLayout historyContainer;
+ private String lastTaskResponse="";
  private TextView quickStatus;
  private TextView activitySummary;
  private TextView technicalDetails;
@@ -125,7 +127,8 @@ public final class MainActivity extends Activity {
    if(useCloud){runCloudTask(p);return;}
    try{JSONObject data=new JSONObject();data.put("prompt",p);robots.resetStates();request("POST","/api/tasks",data);}catch(Exception e){output.setText(e.toString());}
   });
-  button("Task history",()->request("GET","/api/tasks",null));
+  button("↻ Load saved task history",()->request("GET","/api/tasks",null));
+  historyContainer=new LinearLayout(this);historyContainer.setOrientation(LinearLayout.VERTICAL);root.addView(historyContainer);
   title("Performance");
   button("Eco",()->setMode("eco"));
   button("Balanced",()->setMode("balanced"));
@@ -220,12 +223,49 @@ public final class MainActivity extends Activity {
      }
     }
     String result=context.toString();
-    handler.post(()->{if(active)output.setText("CLOUD TASK COMPLETED\\n"+result);});
+    handler.post(()->{if(active){output.setText("CLOUD TASK COMPLETED\\n"+result);activity("✓ CLOUD TASK COMPLETED\\n"+concise(result,650));status("Cloud task completed");}});
+    saveCloudHistory(userPrompt,result,provider);
    }catch(Exception e){
     String error=e.getMessage();
     handler.post(()->{if(active)output.setText("Cloud task stopped: "+error+"\\nYour key was not saved.");});
    }
   });
+ }
+ private void saveCloudHistory(String userPrompt,String result,String provider){
+  HttpURLConnection conn=null;
+  try{
+   JSONObject body=new JSONObject();body.put("prompt",userPrompt);body.put("result",result);body.put("provider",provider);
+   conn=(HttpURLConnection)new URL(BASE+"/api/cloud/history").openConnection();
+   conn.setRequestMethod("POST");conn.setConnectTimeout(1800);conn.setReadTimeout(2500);
+   conn.setDoOutput(true);conn.setRequestProperty("Content-Type","application/json");
+   try(OutputStream out=conn.getOutputStream()){out.write(body.toString().getBytes(StandardCharsets.UTF_8));}
+   int code=conn.getResponseCode();
+   handler.post(()->{if(active&&code>=400)status("Cloud result ready • local history save failed (HTTP "+code+")");});
+  }catch(Exception ignored){
+   handler.post(()->{if(active)status("Cloud result ready • local backend offline, history not saved");});
+  }finally{if(conn!=null)conn.disconnect();}
+ }
+ private void renderHistory(org.json.JSONArray tasks){
+  if(historyContainer==null)return;
+  historyContainer.removeAllViews();
+  if(tasks==null||tasks.length()==0){
+   TextView empty=new TextView(this);empty.setText("No saved tasks yet. Run a task to build your history.");empty.setTextColor(MUTED);historyContainer.addView(empty);return;
+  }
+  for(int i=0;i<Math.min(tasks.length(),30);i++){
+   JSONObject task=tasks.optJSONObject(i);if(task==null)continue;
+   final String id=task.optString("id");
+   final String result=task.optString("result");
+   final String taskPrompt=task.optString("prompt");
+   final String taskState=task.optString("status","unknown");
+   LinearLayout card=new LinearLayout(this);card.setOrientation(LinearLayout.VERTICAL);
+   card.setBackground(shape(PANEL,0xff30435f));card.setPadding(dp(12),dp(10),dp(12),dp(10));
+   LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.setMargins(0,dp(5),0,dp(9));historyContainer.addView(card,cp);
+   TextView heading=new TextView(this);heading.setText(("done".equals(taskState)?"✓ ":"running".equals(taskState)?"◉ ":"! ")+taskState.toUpperCase()+" • "+concise(taskPrompt,110));
+   heading.setTextColor(TEXT);heading.setTextSize(14);heading.setTypeface(Typeface.DEFAULT,Typeface.BOLD);card.addView(heading);
+   Button open=new Button(this);open.setAllCaps(false);open.setText("View result / agent details");open.setTextColor(ACCENT);open.setBackground(shape(0xff20334b,0xff36516c));
+   open.setOnClickListener(v->{output.setText(result.isEmpty()?"No final result yet.":result);request("GET","/api/tasks/"+id,null);});
+   card.addView(open,new LinearLayout.LayoutParams(-1,dp(44)));
+  }
  }
  private void refreshDevice(){
   android.os.BatteryManager battery=(android.os.BatteryManager)getSystemService(BATTERY_SERVICE);
@@ -309,11 +349,17 @@ public final class MainActivity extends Activity {
       view.append("\\nRESULT\\n").append(concise(task.optString("result"),1800));
      }
      activity(view.toString());
+     if(!"running".equals(state)&&!task.optString("result").isEmpty()&&!task.optString("result").equals(lastTaskResponse)){
+      lastTaskResponse=task.optString("result");output.setText(lastTaskResponse);
+     }
      status("Task "+state+" • "+(events==null?0:events.length())+" updates");
     }
    }else if(path.equals("/api/tasks")&&"POST".equals("POST")&&json.has("id")){
     activity("◉ TASK STARTED\\nYour collective is processing the request. Agent updates will appear here.");
     status("Task accepted • agents starting");
+   }else if(path.equals("/api/tasks")){
+    renderHistory(json.optJSONArray("tasks"));
+    status("Task history loaded");
    }else if(path.equals("/api/agents")){
     activity("◉ AGENT STATUS\\n"+concise(raw,450));
     status("Agent status received");
@@ -401,7 +447,7 @@ public final class MainActivity extends Activity {
           for(int i=0;i<names.length;i++)robots.setAgentState(names[i],states[i]);
          }
         }
-        if(!taskRunning){handler.removeCallbacks(poll);output.setText("TASK "+task.optString("status").toUpperCase()+"\\n"+task.optString("result"));}
+        if(!taskRunning){handler.removeCallbacks(poll);}
         else handler.postDelayed(poll,2500);
        }
       }
