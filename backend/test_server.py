@@ -75,6 +75,21 @@ class BackendTests(unittest.TestCase):
   self.assertIn("Local storage",server.recall("Local storage"))
  def test_invalid_knowledge(self):
   self.assertEqual(self.call("/api/knowledge",{"title":"","body":"x"})[0],400)
+ def test_no_task_when_model_not_running(self):
+  with patch.object(server,"model_ready",return_value=False):
+   status,body=self.call("/api/tasks",{"prompt":"Build a robot"})
+  self.assertEqual(status,503)
+  self.assertIn("not ready",body["error"])
+ def test_model_status_unavailable(self):
+  with patch.object(server,"model_ready",return_value=False):
+   status,body=self.call("/api/model/status")
+  self.assertEqual(status,503)
+  self.assertFalse(body["ready"])
+ def test_model_status_available(self):
+  with patch.object(server,"model_ready",return_value=True):
+   status,body=self.call("/api/model/status")
+  self.assertEqual(status,200)
+  self.assertTrue(body["ready"])
  def test_movie_not_falsely_advertised(self):
   self.assertEqual(self.call("/api/video",{"scenes":["x"]})[0],501)
 
