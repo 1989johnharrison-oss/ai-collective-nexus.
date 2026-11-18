@@ -41,7 +41,7 @@ final class CloudAgent {
     while((count=in.read(block))!=-1){buffer.write(block,0,count);if(buffer.size()>1000000)throw new IOException("Response too large");}
    }
    JSONObject response=new JSONObject(buffer.toString("UTF-8"));
-   if(status>=400)throw new IOException("Cloud service HTTP "+status+": "+response.optJSONObject("error").optString("message","Request failed"));
+   if(status>=400)throw new IOException("Cloud service HTTP "+status+": "+(response.optJSONObject("error")==null?"Request failed":response.optJSONObject("error").optString("message","Request failed")));
    return response.getJSONArray("choices").getJSONObject(0).getJSONObject("message").optString("content","");
   }finally{conn.disconnect();}
  }
