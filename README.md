@@ -1,53 +1,42 @@
-# AI Collective Nexus — Android v1.7 + five-bot Python backend
+# AI Collective Nexus v1.8 — Phone-local five-bot Android AI
 
-This repository builds an Android controller with five animated robots: **Planner, Researcher, Engineer, Critic and Synthesizer**. It includes a local Python agent backend that calls **Ollama** on your computer, saves tasks and agent events to SQLite, and can be accessed over a USB cable. The Android app displays battery, available RAM and free storage.
+**No computer or USB cable is required for this setup.** Android APK displays five animated bots and communicates with a Python + llama.cpp AI server running inside Termux **on the same phone**, via 127.0.0.1. This is genuine local model inference once the model has been downloaded and the server started. It is not yet an embedded Android inference engine: Termux must remain running.
 
-## Download the updated APK
+## 1. Install the latest APK
+Open [GitHub Actions](https://github.com/1989johnharrison-oss/ai-collective-nexus./actions), select the latest **green** build, download artifact `AI-Collective-Nexus-APK`, extract the ZIP and install `app-debug.apk` over the previous APK. The app should show **NEXUS v1.8 • PHONE-LOCAL BOT COLLECTIVE**.
 
-Open [GitHub Actions](https://github.com/1989johnharrison-oss/ai-collective-nexus./actions/workflows/android-apk.yml), open the **latest successful** run, and download the **AI-Collective-Nexus-APK** artifact. Extract it to get `app-debug.apk`. **Install the newest APK over the old one**; the previous app does not automatically update when GitHub code changes. Confirm that the top of the screen says **NEXUS v1.6 • LIVE BOT COLLECTIVE** and displays five animated robots.
+## 2. Install phone-local AI (on your Samsung)
+Install **Termux from F-Droid or the official Termux GitHub releases**, not an outdated Play Store build. Open Termux and run:
 
-## Make the Python connection work
-
-A computer (Windows, macOS or Linux) is needed for this version. Install Python 3.10+, Android Platform Tools (adb), and [Ollama](https://ollama.com). On the computer, run:
-
-```bash
-ollama pull gemma3:1b
-ollama serve
+```sh
+pkg update -y
+pkg install -y git
+git clone https://github.com/1989johnharrison-oss/ai-collective-nexus..git ~/nexus-installer
+bash ~/nexus-installer/phone/setup-phone.sh
+bash ~/ai-collective-nexus/start-phone.sh
 ```
 
-Ollama may already be running in the background; if so, don't start a second server. In another terminal, from this repository run:
+The installer downloads a ~1 GB Q4 quantised Qwen2.5 1.5B instruction model and compiles llama.cpp locally using only two build jobs. **This is an initial experimental configuration, not yet verified on your particular Samsung.** Allow several GB free space, keep the phone charged, and expect compilation/model downloads to take time. If the model URL changes, set `NEXUS_MODEL_URL` to a direct GGUF download URL before running setup. If the phone heats up, stop the server and allow it to cool. Never disable Android's thermal protections.
 
-```bash
-python backend/server.py
+## 3. Start the five bots
+Keep Termux open or running in the background while using the Nexus APK. Tap **Check backend connection**; the app should show **Backend: CONNECTED**. Type a task and tap **Launch task**. Planner, Researcher, Engineer, Critic and Synthesizer run in sequence using the locally loaded model, and the animated bots update individually. Tasks are saved in SQLite.
+
+After reboot, start Termux and run:
+
+```sh
+bash ~/ai-collective-nexus/start-phone.sh
 ```
 
-Enable Developer options and **USB debugging** on your Samsung, connect it to the computer via USB, approve the debugging prompt, then run:
+The local Python API listens on `127.0.0.1:8765`; llama.cpp listens on `127.0.0.1:8080`. No router configuration, cloud AI subscription or USB debugging is needed.
 
-```bash
-adb devices
-adb reverse tcp:8765 tcp:8765
-```
-
-Open Nexus on your phone and tap **Check backend connection**. It should say **Backend: CONNECTED**. Now enter an agent task and tap **Launch task**. Use **Refresh live bot activity** to view the task and its specialist events. Ollama must have the chosen model downloaded; set `NEXUS_MODEL` to a different locally installed model if desired.
-
-## What this build can and cannot do
-
-- **Works:** Android app, five animated avatars, connection status, Ollama-powered five-role sequential collaboration, task history, SQLite persistence, battery/storage/RAM information.
-- **Not yet:** standalone on-device AI inference, phone-only Python server, autonomous internet research, fully generative AI movies. The included `backend/server.py` is a compact real Ollama agent backend; it intentionally returns HTTP 501 for movie rendering.
-- **Movie studio:** The Android scene editor is present. For storyboard MP4 rendering, use the full Python v1.5 backend from the earlier prototype with FFmpeg and Pillow; this smaller backend does not contain its renderer.
-- **Security:** Python binds to `127.0.0.1` only. Do **not** expose its unauthenticated API to the public internet or forward router ports. USB `adb reverse` avoids opening a LAN server.
+## Actual capabilities and limits
+- **Implemented in source:** five animated robot avatars, sequential specialist prompts, task/event history, live status polling, local SQLite database, Android device metrics, configurable Ollama or llama.cpp inference, and phone-only Termux setup scripts.
+- **Not implemented:** integrated native Android model loading without Termux, independent concurrent agents, automatic online research, generative video, working movie rendering in the compact Python backend, or persistent self-learning across tasks. Movie Studio UI currently calls an endpoint returning 501.
+- Eco/Balanced/Performance adjust **maximum output tokens**, not actual device clock speed.
+- Local 1.5B models can be slow and make mistakes; 12 GB RAM doesn't guarantee a model will run fast or reliably.
+- **Security:** Both servers bind to loopback only. Do not expose the unauthenticated API over the internet.
+- **Build status:** GitHub Actions runs backend tests and builds an APK. Source changes are not installed until you download the new successful artifact.
 
 ## Troubleshooting
+If you still see the old screen, install the latest successful APK artifact. If the backend is disconnected, ensure Termux is still running and check `curl http://127.0.0.1:8765/api/health` inside Termux. If llama.cpp fails, review the Termux error output and check that `~/ai-collective-nexus/models/qwen2.5-1.5b-instruct-q4_k_m.gguf` exists. If Android kills Termux in the background, keep it foreground while testing and review Samsung battery restrictions for Termux.
 
-If the old white screen remains, you have the previous APK installed: download the latest successful workflow artifact and install it. If the build fails, open the failed step in GitHub Actions. If the app says disconnected, check `adb devices`, re-run `adb reverse`, and verify `http://127.0.0.1:8765/api/health` on the computer. If agents fail with Ollama errors, run `ollama list` and ensure the model is installed.
-
-This is an open-source prototype. No personal credentials should be committed to this public repository.
-
-## v1.7 engineering improvements
-
-- Android automatically polls the current task every 2.5 seconds and updates **each of the five robot statuses independently** from the Python event log. Task results appear when finished.
-- Eco, Balanced and Performance modes now change Ollama `num_predict` to 256, 512 and 1024 tokens respectively; these are output-token limits, not CPU/GPU speed controls. The selected mode is in-memory and resets on server restart.
-- The Python backend exposes `GET /api/performance`, reports its actual mode in health checks, and returns 404 for unknown tasks.
-- GitHub Actions now runs backend HTTP regression tests before building the Android APK.
-
-**Unfinished:** A true on-device Android model runtime, a functional movie renderer in this lightweight backend, automatic discovery of the computer without USB, live thermal readings, secure authenticated network access, and independent concurrent agents. This version is a sequential Ollama collective with animated avatars. A green GitHub Actions build and phone testing are still required for the v1.7 APK.
