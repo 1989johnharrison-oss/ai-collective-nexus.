@@ -22,6 +22,8 @@ public final class MainActivity extends Activity {
  private RobotView robots;
  private TextView deviceStatus;
  private String currentJob=null;
+ private String currentTask=null;
+ private TextView connectionStatus;
  private boolean active=true;
  @Override public void onCreate(Bundle savedInstanceState){
   super.onCreate(savedInstanceState);
@@ -30,8 +32,11 @@ public final class MainActivity extends Activity {
   scroll.addView(root);setContentView(scroll);
   title("AI COLLECTIVE NEXUS");
   label("Android controller • 12 GB device profile");
-  label("Requires a Python backend connected over USB (adb reverse).");
+  label("NEXUS v1.6 • LIVE BOT COLLECTIVE");
+  connectionStatus=label("Backend: not checked • USB connection required");
+  label("Python backend on your computer + Ollama model + adb reverse");
   button("Check backend connection",()->request("GET","/api/health",null));
+  button("Refresh live bot activity",()->{if(currentTask!=null)request("GET","/api/tasks/"+currentTask,null);else request("GET","/api/agents",null);});
   title("THE BOT COLLECTIVE");
   robots=new RobotView(this);root.addView(robots,new LinearLayout.LayoutParams(-1,(int)(210*getResources().getDisplayMetrics().density)));
   label("Planner  •  Researcher  •  Engineer  •  Critic  •  Synthesizer");
@@ -104,7 +109,7 @@ public final class MainActivity extends Activity {
     ByteArrayOutputStream buf=new ByteArrayOutputStream();byte[] chunk=new byte[4096];int n;
     while((n=in.read(chunk))!=-1){buf.write(chunk,0,n);if(buf.size()>1048576)throw new IOException("Response too large");}
     String result="HTTP "+code+"\n"+buf.toString("UTF-8");
-    handler.post(()->{if(active){output.setText(result);if(path.startsWith("/api/tasks"))robots.setWorking(false);}});
+    handler.post(()->{if(active){output.setText(result);if(path.equals("/api/health"))connectionStatus.setText("Backend: CONNECTED");if(path.startsWith("/api/tasks/")){try{JSONObject j=new JSONObject(result.substring(result.indexOf("{")));JSONObject task=j.optJSONObject("task");if(task!=null)robots.setWorking("running".equals(task.optString("status")));}catch(Exception ignored){}}}});
    }catch(Exception e){handler.post(()->{if(active)output.setText("Backend unavailable. Run adb reverse tcp:8765 tcp:8765 and start the Python backend.\n"+e);});}
    finally{if(conn!=null)conn.disconnect();}
   });
