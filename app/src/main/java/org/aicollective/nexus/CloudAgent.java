@@ -14,16 +14,17 @@ import java.nio.charset.StandardCharsets;
 final class CloudAgent {
  static final String ENDPOINT="https://openrouter.ai/api/v1/chat/completions";
  static final String MODEL="openrouter/free";
- static String complete(String key,String prompt) throws Exception {
+ static String complete(String key,String prompt) throws Exception {return complete("openrouter",key,MODEL,prompt);}
+ static String complete(String provider,String key,String model,String prompt) throws Exception {
   if(key==null||key.trim().isEmpty())throw new IOException("OpenRouter key is required for cloud mode");
   JSONObject payload=new JSONObject();
-  payload.put("model",MODEL);
+  payload.put("model",model);
   payload.put("stream",false);
   payload.put("max_tokens",600);
   JSONArray messages=new JSONArray();
   messages.put(new JSONObject().put("role","user").put("content",prompt));
   payload.put("messages",messages);
-  HttpURLConnection conn=(HttpURLConnection)new URL(ENDPOINT).openConnection();
+  HttpURLConnection conn=(HttpURLConnection)new URL("ollama".equals(provider)?OLLAMA_ENDPOINT:ENDPOINT).openConnection();
   try {
    conn.setRequestMethod("POST");
    conn.setConnectTimeout(10000);
