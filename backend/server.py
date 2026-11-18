@@ -79,8 +79,9 @@ class API(BaseHTTPRequestHandler):
   self.wfile.write(data)
  def do_GET(self):
   path=self.path.split("?")[0]
-  if path=="/api/health":return self.send(200,{"status":"ok","backend":ENGINE,"model":MODEL,"mode":MODE,"inference_ready":model_ready()})
+  if path=="/api/health":return self.send(200,{"status":"ok","backend":ENGINE,"model":MODEL,"mode":MODE,"inference_ready":model_ready(),"api_key_required":False,"phone_local":ENGINE=="llamacpp"})
   if path=="/api/performance":return self.send(200,{"mode":MODE,"max_output_tokens":LIMITS[MODE]})
+  if path=="/api/capabilities":return self.send(200,{"local_inference":ENGINE=="llamacpp","api_key_required":False,"cloud_inference":False,"persistent_memory":True,"five_agent_workflow":True,"movie_rendering":False,"native_android_inference":False,"requires_termux":True})
   if path=="/api/knowledge":
    with db() as c:rows=c.execute("SELECT id,title,body FROM knowledge ORDER BY rowid DESC LIMIT 100").fetchall()
    return self.send(200,{"notes":[dict(zip(("id","title","body"),r)) for r in rows]})
