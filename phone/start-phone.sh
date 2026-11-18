@@ -2,7 +2,8 @@
 set -euo pipefail
 ROOT="$HOME/ai-collective-nexus"
 MODEL="$ROOT/models/qwen2.5-1.5b-instruct-q4_k_m.gguf"
-SERVER="$ROOT/llama.cpp/build/bin/llama-server"
+SERVER="$(command -v llama-server || true)"
+if [ -z "$SERVER" ]; then SERVER="$ROOT/llama.cpp/build/bin/llama-server"; fi
 [ -x "$SERVER" ] || { echo "Run setup-phone.sh first"; exit 1; }
 [ -s "$MODEL" ] || { echo "Model missing: $MODEL"; exit 1; }
 export NEXUS_ENGINE=llamacpp
