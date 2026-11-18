@@ -17,6 +17,7 @@ class BackendTests(unittest.TestCase):
  def setUpClass(cls):
   cls.tmp=tempfile.TemporaryDirectory()
   server.DB=Path(cls.tmp.name)/"test.sqlite3"
+  server.ARTIFACTS=Path(cls.tmp.name)/"artifacts"
   cls.http=server.ThreadingHTTPServer(("127.0.0.1",0),server.API)
   cls.thread=threading.Thread(target=cls.http.serve_forever,daemon=True)
   cls.thread.start()
@@ -139,6 +140,20 @@ class BackendTests(unittest.TestCase):
   _,body=self.call("/api/tasks/"+tid)
   self.assertEqual(body["task"]["status"],"failed")
   self.assertIn("empty response",body["task"]["result"])
+ def test_html_artifact_preview(self):
+  tid="a"*32
+  with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Game","done",""))
+  html="<html><body>Game</body></html>"
+  self.assertTrue(server.save_html_artifact(tid,["```html\\n"+html+"\\n```"]))
+  with urllib.request.urlopen(self.url+"/api/artifacts/"+tid,timeout=3) as response:
+   self.assertEqual(response.read().decode(),html)
+   self.assertIn("sandbox allow-scripts",response.headers["Content-Security-Policy"])
+   self.assertIn("connect-src 'none'",response.headers["Content-Security-Policy"])
+  _,task=self.call("/api/tasks/"+tid)
+  self.assertFalse(task["artifact"]["validated"])
+ def test_artifact_requires_fenced_html(self):
+  self.assertFalse(server.save_html_artifact("b"*32,["<html>unfenced</html>"]))
+  self.assertEqual(self.call("/api/artifacts/invalid")[0],404)
  def test_movie_not_falsely_advertised(self):
   self.assertEqual(self.call("/api/video",{"scenes":["x"]})[0],501)
 
