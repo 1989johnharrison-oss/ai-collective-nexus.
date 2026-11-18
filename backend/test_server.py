@@ -5,6 +5,7 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from unittest.mock import patch
 from pathlib import Path
 
 spec=importlib.util.spec_from_file_location("nexus_server",Path(__file__).parent/"server.py")
@@ -48,6 +49,23 @@ class BackendTests(unittest.TestCase):
   self.assertEqual(self.call("/api/tasks",["bad"])[0],400)
  def test_reject_empty_task(self):
   self.assertEqual(self.call("/api/tasks",{"prompt":""})[0],400)
+ def test_llamacpp_request_shape(self):
+  class FakeResponse:
+   def __enter__(self):return self
+   def __exit__(self,*args):return False
+  def fake_urlopen(req,timeout):
+   payload=json.loads(req.data)
+   self.assertEqual(payload["messages"][0]["role"],"user")
+   self.assertEqual(payload["messages"][0]["content"],"Hello")
+   self.assertGreater(payload["max_tokens"],0)
+   return FakeResponse()
+  old_engine=server.ENGINE
+  server.ENGINE="llamacpp"
+  try:
+   with patch.object(server.urllib.request,"urlopen",side_effect=fake_urlopen):
+    with patch.object(server.json,"load",return_value={"choices":[{"message":{"content":"Hi"}}]}):
+     self.assertEqual(server.infer("Hello"),"Hi")
+  finally:server.ENGINE=old_engine
  def test_movie_not_falsely_advertised(self):
   self.assertEqual(self.call("/api/video",{"scenes":["x"]})[0],501)
 
