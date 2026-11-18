@@ -99,6 +99,46 @@ class BackendTests(unittest.TestCase):
  def test_cloud_history_rejects_invalid_records(self):
   for record in ({"prompt":"","result":"x","provider":"ollama"},{"prompt":"x","result":"","provider":"ollama"},{"prompt":"x","result":"y","provider":"unknown"}):
    self.assertEqual(self.call("/api/cloud/history",record)[0],400)
+ def test_agent_handoffs_and_final_result(self):
+  tid="test-five-agent-flow"
+  with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Create a game","running",""))
+  replies=["Plan","Facts and assumptions","Game source code","Code review","Final playable game instructions"]
+  with patch.object(server,"recall",return_value="Relevant note"):
+   with patch.object(server,"infer",side_effect=replies) as inference:
+    self.assertTrue(server.LOCK.acquire(False))
+    server.work(tid,"Create a game")
+  self.assertEqual(inference.call_count,5)
+  self.assertIn("PLANNER: Plan",inference.call_args_list[1].args[0])
+  self.assertIn("ENGINEER: Game source code",inference.call_args_list[3].args[0])
+  self.assertIn("CRITIC: Code review",inference.call_args_list[4].args[0])
+  status,body=self.call("/api/tasks/"+tid)
+  self.assertEqual(status,200)
+  self.assertEqual(body["task"]["status"],"done")
+  self.assertEqual(body["task"]["result"],replies[-1])
+  self.assertEqual(len([e for e in body["events"] if e["status"]=="done"]),5)
+ def test_agent_failure_is_visible_and_releases_lock(self):
+  tid="test-agent-error"
+  with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Test failure","running",""))
+  with patch.object(server,"recall",return_value=""):
+   with patch.object(server,"infer",side_effect=RuntimeError("model stopped")):
+    self.assertTrue(server.LOCK.acquire(False))
+    server.work(tid,"Test failure")
+  _,body=self.call("/api/tasks/"+tid)
+  self.assertEqual(body["task"]["status"],"failed")
+  self.assertEqual(body["events"][-1]["agent"],"planner")
+  self.assertEqual(body["events"][-1]["status"],"failed")
+  self.assertTrue(server.LOCK.acquire(False))
+  server.LOCK.release()
+ def test_empty_agent_response_is_failure(self):
+  tid="test-empty-response"
+  with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Empty model","running",""))
+  with patch.object(server,"recall",return_value=""):
+   with patch.object(server,"infer",return_value="   "):
+    self.assertTrue(server.LOCK.acquire(False))
+    server.work(tid,"Empty model")
+  _,body=self.call("/api/tasks/"+tid)
+  self.assertEqual(body["task"]["status"],"failed")
+  self.assertIn("empty response",body["task"]["result"])
  def test_movie_not_falsely_advertised(self):
   self.assertEqual(self.call("/api/video",{"scenes":["x"]})[0],501)
 
