@@ -36,7 +36,7 @@ public final class MainActivity extends Activity {
   scroll.addView(root);setContentView(scroll);
   title("AI COLLECTIVE NEXUS");
   label("Android controller • 12 GB device profile");
-  label("NEXUS v1.8 • PHONE-LOCAL BOT COLLECTIVE");
+  label("NEXUS v2.0 • LOCAL + OPTIONAL CLOUD");
   connectionStatus=label("Backend: not checked • same-phone local AI");
   label("Run Nexus in Termux on this phone — no PC or USB needed");
   button("Check backend connection",()->request("GET","/api/health",null));
