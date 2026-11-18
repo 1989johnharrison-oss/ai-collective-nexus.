@@ -4,6 +4,11 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.*;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
+import android.view.View;
+import android.view.WindowManager;
 import org.json.JSONObject;
 import java.net.*;
 import java.io.*;
@@ -16,6 +21,7 @@ public final class MainActivity extends Activity {
  private final ExecutorService executor=Executors.newSingleThreadExecutor();
  private final Handler handler=new Handler(Looper.getMainLooper());
  private LinearLayout root;
+ private static final int BG=0xff0b1020, PANEL=0xff17233b, TEXT=0xffedf4ff, MUTED=0xffa8b8d2, ACCENT=0xff5eead4;
  private TextView output;
  private EditText prompt;
  private EditText cloudKey;
@@ -34,15 +40,18 @@ public final class MainActivity extends Activity {
  private final Runnable poll=new Runnable(){@Override public void run(){if(active&&taskRunning&&currentTask!=null){request("GET","/api/tasks/"+currentTask,null);handler.postDelayed(this,2500);}}};
  @Override public void onCreate(Bundle savedInstanceState){
   super.onCreate(savedInstanceState);
+  getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
+  getWindow().getDecorView().setSystemUiVisibility(0);
   ScrollView scroll=new ScrollView(this);
-  root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(24,24,24,24);
+  scroll.setBackgroundColor(BG);
+  root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setPadding(dp(18),dp(22),dp(18),dp(34));
   scroll.addView(root);setContentView(scroll);
   title("AI COLLECTIVE NEXUS");
-  label("Android controller • 12 GB device profile");
+  label("YOUR FIVE-AGENT AI WORKSPACE");
   label("NEXUS v2.1 • OLLAMA CLOUD + EFFICIENT AGENTS");
   connectionStatus=label("Backend: not checked • same-phone local AI");
-  label("Run Nexus in Termux on this phone — no PC or USB needed");
-  button("Check backend connection",()->request("GET","/api/health",null));
+  label("Cloud mode works without Termux. Local mode requires the phone backend.");
+  button("Check LOCAL backend connection",()->request("GET","/api/health",null));
   button("PHONE-ONLY SETUP INSTRUCTIONS",()->{
    android.content.Intent browser=new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/1989johnharrison-oss/ai-collective-nexus."));
    startActivity(browser);
@@ -55,8 +64,8 @@ public final class MainActivity extends Activity {
   button("Check bot status",()->request("GET","/api/agents",null));
   button("Check local AI model",()->request("GET","/api/model/status",null));
   title("PERSISTENT BOT MEMORY");
-  EditText memoryTitle=new EditText(this);memoryTitle.setHint("Knowledge title");root.addView(memoryTitle);
-  EditText memoryBody=new EditText(this);memoryBody.setHint("What should the bots remember?");memoryBody.setMinLines(3);root.addView(memoryBody);
+  EditText memoryTitle=new EditText(this);memoryTitle.setHint("Knowledge title");field(memoryTitle);
+  EditText memoryBody=new EditText(this);memoryBody.setHint("What should the bots remember?");memoryBody.setMinLines(3);field(memoryBody);
   button("Save knowledge",()->{
    try{
     JSONObject note=new JSONObject();note.put("title",memoryTitle.getText().toString());note.put("body",memoryBody.getText().toString());
@@ -65,19 +74,19 @@ public final class MainActivity extends Activity {
   });
   button("View saved knowledge",()->request("GET","/api/knowledge",null));
   title("AI ENGINE • LOCAL OR OPTIONAL CLOUD");
-  label("Local mode needs no account or key. Cloud mode uses OpenRouter free models; an account and API key are required.");
+  label("Choose your AI engine. Ollama Cloud works with your existing Ollama API key; local mode works offline once installed.");
   button("Use local AI (offline)",()->{useCloud=false;output.setText("Local AI selected. Start the local model in Termux.");});
-  button("Use OpenRouter cloud AI (online)",()->{useCloud=true;output.setText("Cloud AI selected. Enter an OpenRouter key below; free model requests have usage limits.");});
-  button("Cloud provider: Ollama",()->{cloudProvider="ollama";cloudModel="gemma4:31b";output.setText("Ollama Cloud selected. Enter your Ollama key; cloud usage limits apply.");});
-  button("Cloud provider: OpenRouter",()->{cloudProvider="openrouter";cloudModel="openrouter/free";output.setText("OpenRouter free model router selected.");});
+  button("Use cloud AI (online)",()->{useCloud=true;output.setText("Cloud AI selected. Choose Ollama or OpenRouter below and enter the matching key.");});
+  button("Cloud provider: Ollama",()->{useCloud=true;cloudProvider="ollama";cloudModel="gemma4:31b";output.setText("Ollama Cloud selected. Enter your Ollama key; cloud usage limits apply.");});
+  button("Cloud provider: OpenRouter",()->{useCloud=true;cloudProvider="openrouter";cloudModel="openrouter/free";output.setText("OpenRouter free model router selected.");});
   button("Cloud coordination: Efficient (1–3 requests)",()->{efficientCloud=true;output.setText("Efficient coordination enabled.");});
   button("Cloud coordination: Full review (5 requests)",()->{efficientCloud=false;output.setText("Full five-agent review enabled.");});
   cloudKey=new EditText(this);cloudKey.setHint("Cloud provider API key (not saved)");
   cloudKey.setInputType(android.text.InputType.TYPE_CLASS_TEXT|android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-  root.addView(cloudKey);
+  field(cloudKey);
   button("Clear cloud key",()->{cloudKey.setText("");output.setText("Cloud key cleared from input.");});
   title("AI Agents");
-  prompt=new EditText(this);prompt.setHint("Enter an agent task");prompt.setMinLines(3);root.addView(prompt);
+  prompt=new EditText(this);prompt.setHint("Enter an agent task");prompt.setMinLines(3);field(prompt);
   button("Launch task",()->{
    String p=prompt.getText().toString().trim();
    if(p.isEmpty()){output.setText("Enter a task");return;}
@@ -90,8 +99,8 @@ public final class MainActivity extends Activity {
   button("Balanced",()->setMode("balanced"));
   button("Performance",()->setMode("performance"));
   title("Movie Studio");
-  filmTitle=new EditText(this);filmTitle.setHint("Movie title");root.addView(filmTitle);
-  filmScenes=new EditText(this);filmScenes.setHint("One scene caption per line (up to 60)");filmScenes.setMinLines(4);root.addView(filmScenes);
+  filmTitle=new EditText(this);filmTitle.setHint("Movie title");field(filmTitle);
+  filmScenes=new EditText(this);filmScenes.setHint("One scene caption per line (up to 60)");filmScenes.setMinLines(4);field(filmScenes);
   button("Render storyboard movie",()->renderMovie());
   button("Recent video jobs",()->request("GET","/api/video/jobs",null));
   button("Check current movie",()->{if(currentJob==null)output.setText("Start a movie first");else request("GET","/api/video/"+currentJob,null);});
@@ -99,8 +108,8 @@ public final class MainActivity extends Activity {
   deviceStatus=label("Checking...");
   button("Refresh device status",()->refreshDevice());
   refreshDevice();
-  title("Response");
-  output=label("Ready");
+  title("RESPONSE");
+  output=label("Ready — choose cloud mode for Ollama, or start your local backend.");
  }
  private void runCloudTask(String userPrompt){
   final String key=cloudKey.getText().toString().trim();
@@ -175,9 +184,33 @@ public final class MainActivity extends Activity {
   try{JSONObject body=new JSONObject();body.put("mode",mode);request("POST","/api/performance",body);}
   catch(Exception e){output.setText(e.toString());}
  }
- private TextView label(String text){TextView t=new TextView(this);t.setText(text);t.setTextSize(16);root.addView(t);return t;}
- private void title(String text){TextView t=label(text);t.setTextSize(22);t.setPadding(0,20,0,10);}
- private void button(String name,Runnable fn){Button b=new Button(this);b.setText(name);b.setOnClickListener(v->fn.run());root.addView(b);}
+ private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+0.5f);}
+ private GradientDrawable shape(int color,int stroke){
+  GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(16));
+  if(stroke!=0)d.setStroke(dp(1),stroke);return d;
+ }
+ private void field(EditText e){
+  e.setTextColor(TEXT);e.setHintTextColor(MUTED);e.setTextSize(16);
+  e.setBackground(shape(PANEL,0xff30435f));e.setPadding(dp(16),dp(13),dp(16),dp(13));
+  LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,dp(5),0,dp(12));root.addView(e,lp);
+ }
+ private TextView label(String value){
+  TextView t=new TextView(this);t.setText(value);t.setTextColor(MUTED);t.setTextSize(15);
+  t.setLineSpacing(dp(3),1f);
+  LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.setMargins(0,dp(3),0,dp(7));root.addView(t,lp);return t;
+ }
+ private void title(String value){
+  TextView t=label(value);t.setTextColor(TEXT);t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+  t.setTextSize(value.equals("AI COLLECTIVE NEXUS")?26:19);
+  t.setPadding(0,dp(17),0,dp(6));
+ }
+ private void button(String name,Runnable fn){
+  Button b=new Button(this);b.setAllCaps(false);b.setText(name);b.setTextColor(TEXT);b.setTextSize(15);
+  b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);
+  b.setBackground(shape(PANEL,0xff36516c));b.setPadding(dp(14),dp(9),dp(14),dp(9));
+  b.setOnClickListener(v->fn.run());
+  LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(52));lp.setMargins(0,dp(4),0,dp(8));root.addView(b,lp);
+ }
  private void request(String method,String path,JSONObject payload){
   executor.execute(()->{
    HttpURLConnection conn=null;
