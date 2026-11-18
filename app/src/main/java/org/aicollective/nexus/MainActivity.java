@@ -24,6 +24,10 @@ public final class MainActivity extends Activity {
  private static final int BG=0xff0b1020, PANEL=0xff17233b, TEXT=0xffedf4ff, MUTED=0xffa8b8d2, ACCENT=0xff5eead4;
  private TextView output;
  private TextView quickStatus;
+ private TextView activitySummary;
+ private TextView technicalDetails;
+ private boolean detailsExpanded=false;
+ private String lastTechnical="No diagnostic response yet.";
  private EditText prompt;
  private EditText cloudKey;
  private EditText modelInput;
@@ -50,21 +54,27 @@ public final class MainActivity extends Activity {
   scroll.addView(root);setContentView(scroll);
   title("AI COLLECTIVE NEXUS");
   label("YOUR FIVE-AGENT AI WORKSPACE");
-  label("NEXUS v2.3 • LIVE STATUS • OLLAMA CLOUD");
+  label("NEXUS v2.4 • COLLECTIVE DASHBOARD");
   connectionStatus=label("Backend: not checked • same-phone local AI");
-  quickStatus=label("STATUS • Ready. Tap any control to see its result here.");
+  quickStatus=label("● READY  •  Choose an engine and launch a task");
   quickStatus.setTextColor(ACCENT);quickStatus.setBackground(shape(PANEL,0xff36516c));quickStatus.setPadding(dp(14),dp(12),dp(14),dp(12));
+  title("LIVE ACTIVITY");
+  activitySummary=label("No active task. Your agents will report their progress here.");
+  activitySummary.setTextColor(TEXT);activitySummary.setBackground(shape(PANEL,0xff30435f));activitySummary.setPadding(dp(16),dp(14),dp(16),dp(14));
+  button("◉ Show / hide technical details",()->{detailsExpanded=!detailsExpanded;technicalDetails.setVisibility(detailsExpanded?View.VISIBLE:View.GONE);technicalDetails.setText(lastTechnical);});
+  technicalDetails=label(lastTechnical);technicalDetails.setTextSize(12);technicalDetails.setTextIsSelectable(true);technicalDetails.setVisibility(View.GONE);
+  technicalDetails.setBackground(shape(PANEL,0xff30435f));technicalDetails.setPadding(dp(12),dp(12),dp(12),dp(12));
   label("Cloud mode works without Termux. Local mode requires the phone backend.");
-  button("Check LOCAL backend connection",()->request("GET","/api/health",null));
-  button("PHONE-ONLY SETUP INSTRUCTIONS",()->{
+  button("◉ Check local connection",()->request("GET","/api/health",null));
+  button("⌁ Phone setup guide",()->{
    android.content.Intent browser=new android.content.Intent(android.content.Intent.ACTION_VIEW,android.net.Uri.parse("https://github.com/1989johnharrison-oss/ai-collective-nexus."));
    startActivity(browser);
   });
-  button("Refresh live bot activity",()->{if(currentTask!=null)request("GET","/api/tasks/"+currentTask,null);else request("GET","/api/agents",null);});
+  button("↻ Refresh agent activity",()->{if(currentTask!=null)request("GET","/api/tasks/"+currentTask,null);else request("GET","/api/agents",null);});
   title("THE BOT COLLECTIVE");
   robots=new RobotView(this);root.addView(robots,new LinearLayout.LayoutParams(-1,(int)(210*getResources().getDisplayMetrics().density)));
-  label("Planner  •  Researcher  •  Engineer  •  Critic  •  Synthesizer");
-  label("Animated bots are visual avatars. Their AI work requires the backend.");
+  label("PLANNER   •   RESEARCHER   •   ENGINEER   •   CRITIC   •   SYNTHESIZER");
+  label("Agent colours indicate their roles. Task updates appear in Live Activity above.");
   button("Check bot status",()->request("GET","/api/agents",null));
   button("Check local AI model",()->request("GET","/api/model/status",null));
   title("PERSISTENT BOT MEMORY");
@@ -189,7 +199,80 @@ public final class MainActivity extends Activity {
   try{JSONObject body=new JSONObject();body.put("mode",mode);request("POST","/api/performance",body);}
   catch(Exception e){output.setText(e.toString());}
  }
- private void status(String message){if(quickStatus!=null)quickStatus.setText("STATUS • "+message);if(output!=null)output.setText(message);}
+ private void status(String message){
+  if(quickStatus!=null)quickStatus.setText("● "+message);
+  if(output!=null)output.setText(message);
+ }
+ private void activity(String message){if(activitySummary!=null)activitySummary.setText(message);}
+ private void diagnostics(String message){
+  lastTechnical=message;
+  if(technicalDetails!=null&&detailsExpanded)technicalDetails.setText(message);
+ }
+ private String concise(String text,int limit){
+  if(text==null)return "";
+  text=text.replace("\\n"," ").replace("\\r"," ").trim();
+  return text.length()>limit?text.substring(0,limit)+"…":text;
+ }
+ private void presentResponse(String path,int code,String raw){
+  diagnostics("HTTP "+code+" • "+path+"\\n"+raw);
+  try{
+   JSONObject json=new JSONObject(raw);
+   if(path.equals("/api/health")){
+    boolean ready=json.optBoolean("inference_ready",false);
+    connectionStatus.setText("LOCAL ENGINE  •  "+(ready?"CONNECTED + MODEL READY":"BACKEND CONNECTED"));
+    status(ready?"Local AI online and ready":"Backend online • checking model readiness");
+    activity("◉ LOCAL CONNECTION\\n"+(ready?"Your AI model and Nexus backend are responding.":"The backend responded. The AI model may still be loading."));
+   }else if(path.equals("/api/model/status")){
+    boolean ready=code<400;
+    status(ready?"AI model ready":"AI model not ready");
+    activity("◉ LOCAL MODEL\\n"+(ready?"Model endpoint responded successfully.":"Model unavailable: "+concise(raw,180)));
+   }else if(path.startsWith("/api/tasks/")){
+    JSONObject task=json.optJSONObject("task");
+    if(task!=null){
+     String state=task.optString("status","unknown");
+     org.json.JSONArray events=json.optJSONArray("events");
+     StringBuilder view=new StringBuilder();
+     view.append("◉ TASK  •  ").append(state.toUpperCase()).append("\\n");
+     view.append(concise(task.optString("prompt"),160)).append("\\n\\n");
+     String[] agents={"planner","researcher","engineer","critic","synthesizer"};
+     for(String agent:agents){
+      String agentState="waiting",detail="";
+      if(events!=null)for(int i=0;i<events.length();i++){
+       JSONObject event=events.optJSONObject(i);
+       if(event!=null&&agent.equalsIgnoreCase(event.optString("agent"))){
+        agentState=event.optString("status","waiting");
+        detail=event.optString("detail","");
+       }
+      }
+      String symbol="done".equals(agentState)?"✓":"running".equals(agentState)?"◉":"○";
+      view.append(symbol).append(" ").append(agent.toUpperCase()).append("  •  ").append(agentState);
+      if(!detail.isEmpty()&&!detail.equals("Working"))view.append("\\n    ").append(concise(detail,130));
+      view.append("\\n");
+     }
+     if(!"running".equals(state)&&!task.optString("result").isEmpty()){
+      view.append("\\nRESULT\\n").append(concise(task.optString("result"),1800));
+     }
+     activity(view.toString());
+     status("Task "+state+" • "+(events==null?0:events.length())+" updates");
+    }
+   }else if(path.equals("/api/tasks")&&"POST".equals("POST")&&json.has("id")){
+    activity("◉ TASK STARTED\\nYour collective is processing the request. Agent updates will appear here.");
+    status("Task accepted • agents starting");
+   }else if(path.equals("/api/agents")){
+    activity("◉ AGENT STATUS\\n"+concise(raw,450));
+    status("Agent status received");
+   }else if(path.equals("/api/knowledge")){
+    activity("◉ PERSISTENT MEMORY\\n"+concise(raw,550));
+    status("Memory response received");
+   }else{
+    activity("◉ "+path.toUpperCase()+"\\n"+concise(raw,450));
+    status("HTTP "+code+" • "+(code<400?"Request complete":"Request failed"));
+   }
+  }catch(Exception e){
+   status("HTTP "+code+" • response received");
+   activity("◉ SERVER RESPONSE\\n"+concise(raw,350));
+  }
+ }
  private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+0.5f);}
  private GradientDrawable shape(int color,int stroke){
   GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(16));
@@ -233,8 +316,8 @@ public final class MainActivity extends Activity {
     String result="HTTP "+code+"\n"+buf.toString("UTF-8");
     handler.post(()->{
      if(!active)return;
-     status(result.length()>420?result.substring(0,420)+"…":result);
-     if(path.equals("/api/health"))connectionStatus.setText(code<400?"Backend: CONNECTED":"Backend: HTTP "+code);
+     presentResponse(path,code,buf.toString("UTF-8"));
+     if(path.equals("/api/health")&&code>=400)connectionStatus.setText("Backend: HTTP "+code);
      try{
       JSONObject json=new JSONObject(result.substring(result.indexOf("{")));
       if(path.equals("/api/tasks")&&method.equals("POST")&&code<400){
@@ -255,12 +338,12 @@ public final class MainActivity extends Activity {
           if(event!=null)robots.setAgentState(event.optString("agent"),event.optString("status"));
          }
         }
-        if(!taskRunning)output.setText("TASK "+task.optString("status").toUpperCase()+"\\n"+task.optString("result")+"\\n\\n"+json.optJSONArray("events"));
+        if(!taskRunning)output.setText("TASK "+task.optString("status").toUpperCase()+"\\n"+task.optString("result"));
        }
       }
      }catch(Exception ignored){}
     });
-   }catch(Exception e){handler.post(()->{if(active){connectionStatus.setText("Backend: DISCONNECTED");taskRunning=false;handler.removeCallbacks(poll);status("Local connection error: "+e.getClass().getSimpleName()+": "+e.getMessage());}});}
+   }catch(Exception e){handler.post(()->{if(active){connectionStatus.setText("Backend: DISCONNECTED");taskRunning=false;handler.removeCallbacks(poll);status("Local connection failed");activity("◉ CONNECTION ERROR\\n"+e.getClass().getSimpleName()+": "+e.getMessage()+"\\nMake sure Termux is still running.");diagnostics(e.toString());}});}
    finally{if(conn!=null)conn.disconnect();}
   });
  }
