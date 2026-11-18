@@ -49,7 +49,7 @@ public final class MainActivity extends Activity {
   scroll.addView(root);setContentView(scroll);
   title("AI COLLECTIVE NEXUS");
   label("YOUR FIVE-AGENT AI WORKSPACE");
-  label("NEXUS v2.2 • DARK EDITION • OLLAMA CLOUD");
+  label("NEXUS v2.3 • LIVE STATUS • OLLAMA CLOUD");
   connectionStatus=label("Backend: not checked • same-phone local AI");
   quickStatus=label("STATUS • Ready. Tap any control to see its result here.");
   quickStatus.setTextColor(ACCENT);quickStatus.setBackground(shape(PANEL,0xff36516c));quickStatus.setPadding(dp(14),dp(12),dp(14),dp(12));
