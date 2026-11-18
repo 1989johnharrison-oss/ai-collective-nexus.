@@ -144,16 +144,35 @@ class BackendTests(unittest.TestCase):
   tid="a"*32
   with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Game","done",""))
   html="<html><body>Game</body></html>"
-  self.assertTrue(server.save_html_artifact(tid,["```html\\n"+html+"\\n```"]))
+  report=server.workspace.validate(html)
+  self.assertTrue(report["valid"])
+  server.workspace.save(server.ARTIFACTS,tid,html,report)
   with urllib.request.urlopen(self.url+"/api/artifacts/"+tid,timeout=3) as response:
    self.assertEqual(response.read().decode(),html)
    self.assertIn("sandbox allow-scripts",response.headers["Content-Security-Policy"])
    self.assertIn("connect-src 'none'",response.headers["Content-Security-Policy"])
   _,task=self.call("/api/tasks/"+tid)
-  self.assertFalse(task["artifact"]["validated"])
+  self.assertTrue(task["artifact"]["validated"])
+  self.assertEqual(task["artifact"]["validation_scope"],"static only")
  def test_artifact_requires_fenced_html(self):
-  self.assertFalse(server.save_html_artifact("b"*32,["<html>unfenced</html>"]))
+  self.assertIsNone(server.workspace.extract(["<html>unfenced</html>"]))
   self.assertEqual(self.call("/api/artifacts/invalid")[0],404)
+ def test_validation_rejects_network_and_missing_structure(self):
+  report=server.workspace.validate('<html><body><script>fetch("/secret")</script></body></html>')
+  self.assertFalse(report["valid"])
+  self.assertIn("Network APIs are not allowed",report["errors"])
+  self.assertFalse(server.workspace.validate("<p>fragment</p>")["valid"])
+ def test_repair_loop_recovers_invalid_artifact(self):
+  tid="c"*32
+  with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Game","running",""))
+  original="```html\\n<html><body><script>fetch('/bad')</script></body></html>\\n```"
+  repaired="```html\\n<html><body><h1>Game</h1></body></html>\\n```"
+  with patch.object(server,"infer",return_value=repaired) as inference:
+   artifact=server.build_artifact(tid,[original],"Make a game","")
+  self.assertEqual(inference.call_count,1)
+  self.assertTrue(artifact["validated"])
+  _,task=self.call("/api/tasks/"+tid)
+  self.assertEqual(task["artifact"]["validation_scope"],"static only")
  def test_movie_not_falsely_advertised(self):
   self.assertEqual(self.call("/api/video",{"scenes":["x"]})[0],501)
 
