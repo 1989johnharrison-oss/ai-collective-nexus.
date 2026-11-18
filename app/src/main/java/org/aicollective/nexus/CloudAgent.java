@@ -13,10 +13,11 @@ import java.nio.charset.StandardCharsets;
 /** OpenRouter free model gateway. Key is supplied per session, never stored or logged. */
 final class CloudAgent {
  static final String ENDPOINT="https://openrouter.ai/api/v1/chat/completions";
+ static final String OLLAMA_ENDPOINT="https://ollama.com/v1/chat/completions";
  static final String MODEL="openrouter/free";
  static String complete(String key,String prompt) throws Exception {return complete("openrouter",key,MODEL,prompt);}
  static String complete(String provider,String key,String model,String prompt) throws Exception {
-  if(key==null||key.trim().isEmpty())throw new IOException("OpenRouter key is required for cloud mode");
+  if(key==null||key.trim().isEmpty())throw new IOException("Cloud provider API key is required");
   JSONObject payload=new JSONObject();
   payload.put("model",model);
   payload.put("stream",false);
