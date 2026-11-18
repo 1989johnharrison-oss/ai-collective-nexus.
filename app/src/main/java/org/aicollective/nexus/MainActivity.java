@@ -25,6 +25,8 @@ public final class MainActivity extends Activity {
  private String currentTask=null;
  private TextView connectionStatus;
  private boolean active=true;
+ private boolean taskRunning=false;
+ private final Runnable poll=new Runnable(){@Override public void run(){if(active&&taskRunning&&currentTask!=null){request("GET","/api/tasks/"+currentTask,null);handler.postDelayed(this,2500);}}};
  @Override public void onCreate(Bundle savedInstanceState){
   super.onCreate(savedInstanceState);
   ScrollView scroll=new ScrollView(this);
@@ -47,7 +49,7 @@ public final class MainActivity extends Activity {
   button("Launch task",()->{
    String p=prompt.getText().toString().trim();
    if(p.isEmpty()){output.setText("Enter a task");return;}
-   try{JSONObject data=new JSONObject();data.put("prompt",p);robots.setWorking(true);request("POST","/api/tasks",data);}catch(Exception e){output.setText(e.toString());}
+   try{JSONObject data=new JSONObject();data.put("prompt",p);robots.resetStates();request("POST","/api/tasks",data);}catch(Exception e){output.setText(e.toString());}
   });
   button("Task history",()->request("GET","/api/tasks",null));
   title("Performance");
@@ -109,10 +111,38 @@ public final class MainActivity extends Activity {
     ByteArrayOutputStream buf=new ByteArrayOutputStream();byte[] chunk=new byte[4096];int n;
     while((n=in.read(chunk))!=-1){buf.write(chunk,0,n);if(buf.size()>1048576)throw new IOException("Response too large");}
     String result="HTTP "+code+"\n"+buf.toString("UTF-8");
-    handler.post(()->{if(active){output.setText(result);if(path.equals("/api/health"))connectionStatus.setText("Backend: CONNECTED");if(path.startsWith("/api/tasks/")){try{JSONObject j=new JSONObject(result.substring(result.indexOf("{")));JSONObject task=j.optJSONObject("task");if(task!=null)robots.setWorking("running".equals(task.optString("status")));}catch(Exception ignored){}}}});
-   }catch(Exception e){handler.post(()->{if(active)output.setText("Backend unavailable. Run adb reverse tcp:8765 tcp:8765 and start the Python backend.\n"+e);});}
+    handler.post(()->{
+     if(!active)return;
+     output.setText(result);
+     if(path.equals("/api/health"))connectionStatus.setText("Backend: CONNECTED");
+     try{
+      JSONObject json=new JSONObject(result.substring(result.indexOf("{")));
+      if(path.equals("/api/tasks")&&method.equals("POST")&&code<400){
+       currentTask=json.optString("id",null);
+       if(currentTask!=null&&!currentTask.isEmpty()){
+        taskRunning=true;handler.removeCallbacks(poll);handler.postDelayed(poll,500);
+       }
+      }
+      if(path.startsWith("/api/tasks/")&&code<400){
+       JSONObject task=json.optJSONObject("task");
+       if(task!=null){
+        taskRunning="running".equals(task.optString("status"));
+        org.json.JSONArray events=json.optJSONArray("events");
+        if(events!=null){
+         robots.resetStates();
+         for(int i=0;i<events.length();i++){
+          JSONObject event=events.optJSONObject(i);
+          if(event!=null)robots.setAgentState(event.optString("agent"),event.optString("status"));
+         }
+        }
+        if(!taskRunning)output.setText("TASK "+task.optString("status").toUpperCase()+"\\n"+task.optString("result")+"\\n\\n"+json.optJSONArray("events"));
+       }
+      }
+     }catch(Exception ignored){}
+    });
+   }catch(Exception e){handler.post(()->{if(active){connectionStatus.setText("Backend: DISCONNECTED");taskRunning=false;handler.removeCallbacks(poll);output.setText("Backend unavailable. Run adb reverse tcp:8765 tcp:8765 and start the Python backend.\n"+e);}});}
    finally{if(conn!=null)conn.disconnect();}
   });
  }
- @Override protected void onDestroy(){active=false;executor.shutdownNow();super.onDestroy();}
+ @Override protected void onDestroy(){active=false;handler.removeCallbacks(poll);executor.shutdownNow();super.onDestroy();}
 }
