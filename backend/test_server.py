@@ -165,8 +165,8 @@ class BackendTests(unittest.TestCase):
  def test_repair_loop_recovers_invalid_artifact(self):
   tid="c"*32
   with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Game","running",""))
-  original="```html\\n<html><body><script>fetch('/bad')</script></body></html>\\n```"
-  repaired="```html\\n<html><body><h1>Game</h1></body></html>\\n```"
+  original="```html\n<html><body><script>fetch('/bad')</script></body></html>\n```"
+  repaired="```html\n<html><body><h1>Game</h1></body></html>\n```"
   with patch.object(server,"infer",return_value=repaired) as inference:
    artifact=server.build_artifact(tid,[original],"Make a game","")
   self.assertEqual(inference.call_count,1)
