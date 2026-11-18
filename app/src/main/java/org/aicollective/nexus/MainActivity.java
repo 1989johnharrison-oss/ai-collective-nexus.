@@ -48,6 +48,17 @@ public final class MainActivity extends Activity {
   label("Planner  •  Researcher  •  Engineer  •  Critic  •  Synthesizer");
   label("Animated bots are visual avatars. Their AI work requires the backend.");
   button("Check bot status",()->request("GET","/api/agents",null));
+  button("Check local AI model",()->request("GET","/api/model/status",null));
+  title("PERSISTENT BOT MEMORY");
+  EditText memoryTitle=new EditText(this);memoryTitle.setHint("Knowledge title");root.addView(memoryTitle);
+  EditText memoryBody=new EditText(this);memoryBody.setHint("What should the bots remember?");memoryBody.setMinLines(3);root.addView(memoryBody);
+  button("Save knowledge",()->{
+   try{
+    JSONObject note=new JSONObject();note.put("title",memoryTitle.getText().toString());note.put("body",memoryBody.getText().toString());
+    request("POST","/api/knowledge",note);
+   }catch(Exception e){output.setText(e.toString());}
+  });
+  button("View saved knowledge",()->request("GET","/api/knowledge",null));
   title("AI Agents");
   prompt=new EditText(this);prompt.setHint("Enter an agent task");prompt.setMinLines(3);root.addView(prompt);
   button("Launch task",()->{
