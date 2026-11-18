@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """AI Collective Nexus local-only Python agent backend (standard library).
-Run with Ollama on same computer; Android connects via USB adb reverse.
+Run with local llama.cpp on the same Android phone (Termux) or Ollama.
 """
 import json, os, sqlite3, threading, time, uuid, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -9,7 +9,9 @@ from pathlib import Path
 PORT=8765
 DB=Path(__file__).with_name("nexus.sqlite3")
 OLLAMA=os.getenv("OLLAMA_URL","http://127.0.0.1:11434/api/generate")
-MODEL=os.getenv("NEXUS_MODEL","gemma3:1b")
+MODEL=os.getenv("NEXUS_MODEL","local")
+ENGINE=os.getenv("NEXUS_ENGINE","llamacpp").lower()
+LLAMA_URL=os.getenv("LLAMA_URL","http://127.0.0.1:8080/v1/chat/completions")
 ROLES=[("planner","Break the request into a practical plan."),("researcher","Find relevant facts and identify uncertainty. Do not invent sources."),("engineer","Provide a concrete implementation or solution."),("critic","Check the preceding work for flaws, risks, and missing requirements."),("synthesizer","Combine the specialists' findings into a final helpful answer.")]
 LOCK=threading.Lock()
 MODE_LOCK=threading.Lock()
@@ -22,12 +24,19 @@ def db():
  c.execute("CREATE TABLE IF NOT EXISTS knowledge (id TEXT PRIMARY KEY, title TEXT, body TEXT)")
  c.commit()
  return c
-def ollama(prompt):
- data=json.dumps({"model":MODEL,"prompt":prompt,"stream":False,"options":{"num_predict":LIMITS[MODE]}}).encode()
- req=urllib.request.Request(OLLAMA,data=data,headers={"Content-Type":"application/json"})
- with urllib.request.urlopen(req,timeout=180) as response:
+def infer(prompt):
+ if ENGINE=="ollama":
+  data=json.dumps({"model":MODEL,"prompt":prompt,"stream":False,"options":{"num_predict":LIMITS[MODE]}}).encode()
+  url=OLLAMA
+ else:
+  data=json.dumps({"model":MODEL,"messages":[{"role":"user","content":prompt}],"stream":False,"max_tokens":LIMITS[MODE],"temperature":0.6}).encode()
+  url=LLAMA_URL
+ req=urllib.request.Request(url,data=data,headers={"Content-Type":"application/json"})
+ with urllib.request.urlopen(req,timeout=240) as response:
   out=json.load(response)
- return out.get("response","")
+ if ENGINE=="ollama":return out.get("response","")
+ return out["choices"][0]["message"]["content"]
+
 def work(tid,prompt):
  notes=[]
  try:
@@ -35,7 +44,7 @@ def work(tid,prompt):
    with db() as c:
     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"running","Working"))
    context="\n".join(notes)[-7000:]
-   answer=ollama("You are the "+name+" specialist. "+instruction+"\nUser task: "+prompt+"\nPrior agent work:\n"+context)
+   answer=infer("You are the "+name+" specialist. "+instruction+"\nUser task: "+prompt+"\nPrior agent work:\n"+context)
    notes.append(name.upper()+": "+answer)
    with db() as c:
     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
@@ -54,7 +63,7 @@ class API(BaseHTTPRequestHandler):
   self.wfile.write(data)
  def do_GET(self):
   path=self.path.split("?")[0]
-  if path=="/api/health":return self.send(200,{"status":"ok","backend":"ollama","model":MODEL,"mode":MODE})
+  if path=="/api/health":return self.send(200,{"status":"ok","backend":ENGINE,"model":MODEL,"mode":MODE})
   if path=="/api/performance":return self.send(200,{"mode":MODE,"max_output_tokens":LIMITS[MODE]})
   if path=="/api/agents":return self.send(200,{"agents":[{"id":name,"role":description} for name,description in ROLES]})
   if path=="/api/tasks":
@@ -95,5 +104,5 @@ class API(BaseHTTPRequestHandler):
  def log_message(self,*args):pass
 if __name__=="__main__":
  with db() as c:c.execute("UPDATE tasks SET status='failed',result='Interrupted by restart' WHERE status='running'")
- print("Nexus local backend: http://127.0.0.1:%s | Ollama model: %s"%(PORT,MODEL),flush=True)
+ print("Nexus phone backend: http://127.0.0.1:%s | engine=%s model=%s"%(PORT,ENGINE,MODEL),flush=True)
  ThreadingHTTPServer(("127.0.0.1",PORT),API).serve_forever()
