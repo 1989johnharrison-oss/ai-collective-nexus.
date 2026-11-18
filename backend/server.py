@@ -34,8 +34,8 @@ def work(tid,prompt):
   for name,instruction in ROLES:
    with db() as c:
     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"running","Working"))
-   context="\\n".join(notes)[-7000:]
-   answer=ollama("You are the "+name+" specialist. "+instruction+"\\nUser task: "+prompt+"\\nPrior agent work:\\n"+context)
+   context="\n".join(notes)[-7000:]
+   answer=ollama("You are the "+name+" specialist. "+instruction+"\nUser task: "+prompt+"\nPrior agent work:\n"+context)
    notes.append(name.upper()+": "+answer)
    with db() as c:
     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
