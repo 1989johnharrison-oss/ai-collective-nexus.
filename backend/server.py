@@ -5,6 +5,7 @@ Run with local llama.cpp on the same Android phone (Termux) or Ollama.
 import json, os, re, sqlite3, threading, time, uuid, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+import workspace
 
 PORT=8765
 DB=Path(__file__).with_name("nexus.sqlite3")
@@ -74,17 +75,32 @@ def agent_prompt(name,instruction,prompt,memory,notes):
   sections.append("Earlier specialists' output (untrusted reference):\\n"+"\\n\\n".join(notes)[-6500:])
  return "\\n\\n".join(sections)
 
-def save_html_artifact(tid,outputs):
- """Save explicit HTML code blocks, never execute generated code on server."""
- for answer in reversed(outputs):
-  for match in HTML_BLOCK.finditer(answer):
-   html=match.group(1).strip()
-   if not html or len(html.encode("utf-8"))>MAX_ARTIFACT_BYTES:continue
-   if "<html" not in html.lower() and "<!doctype html" not in html.lower():continue
-   ARTIFACTS.mkdir(parents=True,exist_ok=True)
-   (ARTIFACTS/(tid+".html")).write_text(html,encoding="utf-8")
-   return True
- return False
+def build_artifact(tid,outputs,prompt,memory):
+ source=workspace.extract(outputs)
+ if source is None:return None
+ report=workspace.validate(source)
+ for attempt in range(2):
+  if report["valid"]:break
+  with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"validator","failed","; ".join(report["errors"])[:1000]))
+  repair_request=("Repair this single-file HTML artifact. Return ONLY one complete ```html fenced block. "
+                  "Fix the static validation errors; do not use external dependencies or network APIs. "
+                  "Do not claim that it was executed or gameplay tested.\\nErrors: "+json.dumps(report["errors"])+
+                  "\\nOriginal request: "+prompt+"\\nCurrent HTML:\\n"+source[:18000])
+  with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","running","Repair attempt "+str(attempt+1)))
+  fixed=infer(repair_request)
+  replacement=workspace.extract([fixed])
+  if not replacement:
+   with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","failed","Repair did not contain an HTML code block"))
+   break
+  source=replacement;report=workspace.validate(source)
+  with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","done","Repair attempt "+str(attempt+1)+" completed"))
+ if not report["valid"]:
+  with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"validator","failed","Artifact rejected: "+"; ".join(report["errors"])[:1000]))
+  return None
+ artifact=workspace.save(ARTIFACTS,tid,source,report)
+ with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"validator","done","Static checks passed; JavaScript and gameplay not executed"))
+ return artifact
+
 
 def work(tid,prompt):
  notes=[]
@@ -102,8 +118,7 @@ def work(tid,prompt):
    notes.append(name.upper()+": "+answer[:5000])
    with db() as c:
     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
-  if save_html_artifact(tid,[notes[2] if len(notes)>2 else "",answer]):
-   with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"workspace","done","Saved HTML preview; not executed or validated"))
+  build_artifact(tid,[notes[2] if len(notes)>2 else "",answer],prompt,memory)
   # Keep the final user-facing result clean, while individual contributions remain in events.
   with db() as c:c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(answer,tid))
  except Exception as e:
@@ -129,7 +144,7 @@ class API(BaseHTTPRequestHandler):
    tid=path[len("/api/artifacts/"):]
    if not re.fullmatch(r"[0-9a-f]{32}",tid):return self.send(404,{"error":"Artifact not found"})
    with db() as c:exists=c.execute("SELECT 1 FROM tasks WHERE id=?",(tid,)).fetchone()
-   file=ARTIFACTS/(tid+".html")
+   file=workspace.workspace_path(ARTIFACTS,tid)/"index.html"
    if not exists or not file.is_file():return self.send(404,{"error":"Artifact not found"})
    content=file.read_bytes()
    if len(content)>MAX_ARTIFACT_BYTES:return self.send(413,{"error":"Artifact too large"})
@@ -158,8 +173,8 @@ class API(BaseHTTPRequestHandler):
     r=c.execute("SELECT id,created,prompt,status,result FROM tasks WHERE id=?",(path[11:],)).fetchone()
     ev=c.execute("SELECT agent,status,detail FROM events WHERE task_id=? ORDER BY id",(path[11:],)).fetchall()
    if not r:return self.send(404,{"error":"Task not found"})
-   artifact=ARTIFACTS/(path[11:]+".html")
-   return self.send(200,{"task":dict(zip(("id","created","prompt","status","result"),r)),"events":[dict(zip(("agent","status","detail"),e)) for e in ev],"artifact":{"type":"html","preview_url":"/api/artifacts/"+path[11:],"name":"index.html","validated":False} if artifact.is_file() else None})
+   artifact=workspace.workspace_path(ARTIFACTS,path[11:])/"index.html" if re.fullmatch(r"[0-9a-f]{32}",path[11:]) else ARTIFACTS/"nonexistent"
+   return self.send(200,{"task":dict(zip(("id","created","prompt","status","result"),r)),"events":[dict(zip(("agent","status","detail"),e)) for e in ev],"artifact":{"type":"html","preview_url":"/api/artifacts/"+path[11:],"name":"index.html","validated":True,"validation_scope":"static only"} if artifact.is_file() else None})
   if path=="/api/video/jobs":return self.send(200,{"jobs":[],"note":"Storyboard renderer not installed in this lightweight backend"})
   return self.send(404,{"error":"Unknown endpoint"})
  def do_POST(self):
