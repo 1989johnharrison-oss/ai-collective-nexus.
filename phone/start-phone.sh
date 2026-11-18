@@ -14,4 +14,4 @@ LLAMA_PID=$!
 cleanup(){ kill "$LLAMA_PID" 2>/dev/null || true; }
 trap cleanup EXIT INT TERM
 sleep 4
-python "$ROOT/backend/server.py"
+python "$ROOT/source/backend/server.py"
