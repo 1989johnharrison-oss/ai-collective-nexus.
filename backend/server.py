@@ -37,14 +37,20 @@ def infer(prompt):
  if ENGINE=="ollama":return out.get("response","")
  return out["choices"][0]["message"]["content"]
 
+def recall(prompt,limit=4):
+ words=[w.lower() for w in prompt.split() if len(w)>3][:12]
+ with db() as c:rows=c.execute("SELECT title,body FROM knowledge ORDER BY rowid DESC LIMIT 200").fetchall()
+ ranked=sorted(rows,key=lambda row:sum(w in (row[0]+" "+row[1]).lower() for w in words),reverse=True)
+ return "\n".join(title+": "+body[:600] for title,body in ranked[:limit] if not words or any(w in (title+" "+body).lower() for w in words))[:2400]
 def work(tid,prompt):
  notes=[]
  try:
+  memory=recall(prompt)
   for name,instruction in ROLES:
    with db() as c:
     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"running","Working"))
    context="\n".join(notes)[-7000:]
-   answer=infer("You are the "+name+" specialist. "+instruction+"\nUser task: "+prompt+"\nPrior agent work:\n"+context)
+   answer=infer("You are the "+name+" specialist. "+instruction+"\nSaved notes (context only): "+memory+"\nUser task: "+prompt+"\nPrior agent work:\n"+context)
    notes.append(name.upper()+": "+answer)
    with db() as c:
     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
@@ -65,6 +71,15 @@ class API(BaseHTTPRequestHandler):
   path=self.path.split("?")[0]
   if path=="/api/health":return self.send(200,{"status":"ok","backend":ENGINE,"model":MODEL,"mode":MODE})
   if path=="/api/performance":return self.send(200,{"mode":MODE,"max_output_tokens":LIMITS[MODE]})
+  if path=="/api/knowledge":
+   with db() as c:rows=c.execute("SELECT id,title,body FROM knowledge ORDER BY rowid DESC LIMIT 100").fetchall()
+   return self.send(200,{"notes":[dict(zip(("id","title","body"),r)) for r in rows]})
+  if path=="/api/model/status":
+   url="http://127.0.0.1:8080/health" if ENGINE!="ollama" else "http://127.0.0.1:11434/api/tags"
+   try:
+    with urllib.request.urlopen(url,timeout=3) as response:result=json.load(response)
+    return self.send(200,{"engine":ENGINE,"model":MODEL,"reachable":True,"detail":result.get("status","available")})
+   except Exception as e:return self.send(503,{"engine":ENGINE,"reachable":False,"error":str(e)})
   if path=="/api/agents":return self.send(200,{"agents":[{"id":name,"role":description} for name,description in ROLES]})
   if path=="/api/tasks":
    with db() as c: rows=c.execute("SELECT id,created,prompt,status,result FROM tasks ORDER BY created DESC LIMIT 30").fetchall()
@@ -84,6 +99,12 @@ class API(BaseHTTPRequestHandler):
    body=json.loads(self.rfile.read(length))
    if not isinstance(body,dict):return self.send(400,{"error":"Expected JSON object"})
   except (ValueError,TypeError):return self.send(400,{"error":"Invalid JSON"})
+  if self.path=="/api/knowledge":
+   title=body.get("title");note=body.get("body")
+   if not isinstance(title,str) or not isinstance(note,str) or not 1<=len(title.strip())<=120 or not 1<=len(note.strip())<=6000:return self.send(400,{"error":"Invalid note title or content"})
+   key=uuid.uuid4().hex
+   with db() as c:c.execute("INSERT INTO knowledge(id,title,body) VALUES(?,?,?)",(key,title.strip(),note.strip()))
+   return self.send(201,{"id":key,"status":"saved"})
   if self.path=="/api/performance":
    if body.get("mode") not in ("eco","balanced","performance"):return self.send(400,{"error":"Unknown mode"})
    global MODE
