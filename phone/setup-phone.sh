@@ -9,6 +9,11 @@ echo "Installing phone-only dependencies. This can take time and use several GB 
 pkg update -y
 pkg install -y python git cmake clang make curl
 mkdir -p "$MODEL_DIR"
+if [ ! -d "$ROOT/source/.git" ]; then
+ git clone --depth 1 https://github.com/1989johnharrison-oss/ai-collective-nexus..git "$ROOT/source"
+else
+ git -C "$ROOT/source" pull --ff-only
+fi
 if [ ! -d "$ROOT/llama.cpp/.git" ]; then
  git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "$ROOT/llama.cpp"
 fi
