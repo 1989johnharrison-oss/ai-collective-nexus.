@@ -15,13 +15,22 @@ public final class RobotView extends View {
  private final int[] colors={0xff68d8ff,0xffa18cff,0xff6ef2b4,0xffffb66e,0xffff7fb1};
  private int selected=-1;
  private boolean working=false;
+ private boolean animate=true;
+ private static final long FRAME_MS=100;
+ private final Runnable frame=new Runnable(){@Override public void run(){if(isAttachedToWindow()&&getVisibility()==VISIBLE&&hasRunningAgent()&&animate){invalidate();postDelayed(this,FRAME_MS);}}};
+ private boolean hasRunningAgent(){for(String state:states)if("running".equals(state))return true;return working;}
+ private void updateAnimation(){removeCallbacks(frame);invalidate();if(isAttachedToWindow()&&getVisibility()==VISIBLE&&hasRunningAgent()&&animate)postDelayed(frame,FRAME_MS);}
+ @Override protected void onAttachedToWindow(){super.onAttachedToWindow();updateAnimation();}
+ @Override protected void onDetachedFromWindow(){removeCallbacks(frame);super.onDetachedFromWindow();}
+ @Override protected void onVisibilityChanged(View changedView,int visibility){super.onVisibilityChanged(changedView,visibility);if(states!=null)updateAnimation();}
+ public void setAnimationsEnabled(boolean enabled){animate=enabled;updateAnimation();}
  private final String[] states={"standby","standby","standby","standby","standby"};
  public RobotView(Context c){super(c);setMinimumHeight(dp(210));}
  private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+0.5f);}
- public void setSelected(int i){selected=i;invalidate();}
- public void setWorking(boolean value){working=value;invalidate();}
- public void resetStates(){for(int i=0;i<5;i++)states[i]="standby";invalidate();}
- public void setAgentState(String name,String state){for(int i=0;i<5;i++)if(names[i].equalsIgnoreCase(name)){states[i]=state;invalidate();break;}}
+ public void setSelected(int i){if(selected!=i){selected=i;invalidate();}}
+ public void setWorking(boolean value){if(working!=value){working=value;updateAnimation();}}
+ public void resetStates(){boolean changed=false;for(int i=0;i<5;i++)if(!"standby".equals(states[i])){states[i]="standby";changed=true;}if(changed)updateAnimation();}
+ public void setAgentState(String name,String state){for(int i=0;i<5;i++)if(names[i].equalsIgnoreCase(name)){if(!states[i].equals(state)){states[i]=state;updateAnimation();}break;}}
  @Override protected void onDraw(Canvas c){
   super.onDraw(c);
   float w=getWidth(),h=getHeight(),cell=w/5f;
@@ -29,7 +38,7 @@ public final class RobotView extends View {
   c.drawColor(0xff101a2b);
   for(int i=0;i<5;i++){
    float cx=cell*(i+.5f),cy=h*.39f;
-   float bob=(float)Math.sin(t*Math.PI*2+i*.9f)*dp("running".equals(states[i])?5:2);
+   float bob="running".equals(states[i])&&animate?(float)Math.sin(t*Math.PI*2+i*.9f)*dp(3):0;
    int color=colors[i];
    p.setColor(0xff26344a);p.setStyle(Paint.Style.FILL);
    c.drawRoundRect(new RectF(cx-cell*.42f,dp(10),cx+cell*.42f,h-dp(10)),dp(13),dp(13),p);
@@ -50,6 +59,6 @@ public final class RobotView extends View {
    p.setTextSize(dp(9));p.setTypeface(android.graphics.Typeface.DEFAULT);
    c.drawText(active?"WORKING":("done".equals(states[i])?"DONE":"STANDBY"),cx,h-dp(21),p);
   }
-  if(isShown())postInvalidateDelayed(70);
+
  }
 }
