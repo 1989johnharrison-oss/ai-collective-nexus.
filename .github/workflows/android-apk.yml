@@ -34,11 +34,11 @@ jobs:
       - name: Verify APK version and copy uniquely named file
         run: |
           test -s app/build/outputs/apk/debug/app-debug.apk
-          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | grep "versionCode=\x278\x27 versionName=\x272.2\x27"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging app/build/outputs/apk/debug/app-debug.apk | grep "versionCode=\x279\x27 versionName=\x272.3\x27"
           mkdir -p release
-          cp app/build/outputs/apk/debug/app-debug.apk release/Nexus-v2.2-Dark-Edition.apk
+          cp app/build/outputs/apk/debug/app-debug.apk release/Nexus-v2.3-Dark-Edition.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: AI-Collective-Nexus-v2.2-Dark-Edition
-          path: release/Nexus-v2.2-Dark-Edition.apk
+          name: AI-Collective-Nexus-v2.3-Dark-Edition
+          path: release/Nexus-v2.3-Dark-Edition.apk
           if-no-files-found: error
