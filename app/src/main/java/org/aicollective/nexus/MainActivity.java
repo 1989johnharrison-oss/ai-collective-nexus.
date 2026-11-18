@@ -43,7 +43,11 @@ public final class MainActivity extends Activity {
  private TextView connectionStatus;
  private boolean active=true;
  private boolean taskRunning=false;
- private final Runnable poll=new Runnable(){@Override public void run(){if(active&&taskRunning&&currentTask!=null){request("GET","/api/tasks/"+currentTask,null);handler.postDelayed(this,2500);}}};
+ private String lastStatusText="";
+ private String lastActivityText="";
+ private String lastAgentSnapshot="";
+ private boolean pollInFlight=false;
+ private final Runnable poll=new Runnable(){@Override public void run(){if(active&&taskRunning&&currentTask!=null&&!pollInFlight){pollInFlight=true;request("GET","/api/tasks/"+currentTask,null);}}};
  @Override public void onCreate(Bundle savedInstanceState){
   super.onCreate(savedInstanceState);
   getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);
@@ -200,11 +204,13 @@ public final class MainActivity extends Activity {
   catch(Exception e){output.setText(e.toString());}
  }
  private void status(String message){
+  if(message.equals(lastStatusText))return;
+  lastStatusText=message;
   if(quickStatus!=null)quickStatus.setText("● "+message);
-  if(output!=null)output.setText(message);
  }
- private void activity(String message){if(activitySummary!=null)activitySummary.setText(message);}
+ private void activity(String message){if(message.equals(lastActivityText))return;lastActivityText=message;if(activitySummary!=null)activitySummary.setText(message);}
  private void diagnostics(String message){
+  if(message.equals(lastTechnical))return;
   lastTechnical=message;
   if(technicalDetails!=null&&detailsExpanded)technicalDetails.setText(message);
  }
@@ -301,7 +307,7 @@ public final class MainActivity extends Activity {
   LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,dp(52));lp.setMargins(0,dp(4),0,dp(8));root.addView(b,lp);
  }
  private void request(String method,String path,JSONObject payload){
-  status("Connecting to "+path+" …");
+  if(!path.startsWith("/api/tasks/"))status("Connecting to "+path+" …");
   executor.execute(()->{
    HttpURLConnection conn=null;
    try{
@@ -316,6 +322,7 @@ public final class MainActivity extends Activity {
     String result="HTTP "+code+"\n"+buf.toString("UTF-8");
     handler.post(()->{
      if(!active)return;
+     if(path.startsWith("/api/tasks/"))pollInFlight=false;
      presentResponse(path,code,buf.toString("UTF-8"));
      if(path.equals("/api/health")&&code>=400)connectionStatus.setText("Backend: HTTP "+code);
      try{
@@ -332,18 +339,25 @@ public final class MainActivity extends Activity {
         taskRunning="running".equals(task.optString("status"));
         org.json.JSONArray events=json.optJSONArray("events");
         if(events!=null){
-         robots.resetStates();
+         String[] names={"planner","researcher","engineer","critic","synthesizer"};
+         String[] states={"standby","standby","standby","standby","standby"};
          for(int i=0;i<events.length();i++){
           JSONObject event=events.optJSONObject(i);
-          if(event!=null)robots.setAgentState(event.optString("agent"),event.optString("status"));
+          if(event!=null)for(int j=0;j<names.length;j++)if(names[j].equalsIgnoreCase(event.optString("agent")))states[j]=event.optString("status");
+         }
+         String snapshot=java.util.Arrays.toString(states);
+         if(!snapshot.equals(lastAgentSnapshot)){
+          lastAgentSnapshot=snapshot;
+          for(int i=0;i<names.length;i++)robots.setAgentState(names[i],states[i]);
          }
         }
-        if(!taskRunning)output.setText("TASK "+task.optString("status").toUpperCase()+"\\n"+task.optString("result"));
+        if(!taskRunning){handler.removeCallbacks(poll);output.setText("TASK "+task.optString("status").toUpperCase()+"\\n"+task.optString("result"));}
+        else handler.postDelayed(poll,2500);
        }
       }
      }catch(Exception ignored){}
     });
-   }catch(Exception e){handler.post(()->{if(active){connectionStatus.setText("Backend: DISCONNECTED");taskRunning=false;handler.removeCallbacks(poll);status("Local connection failed");activity("◉ CONNECTION ERROR\\n"+e.getClass().getSimpleName()+": "+e.getMessage()+"\\nMake sure Termux is still running.");diagnostics(e.toString());}});}
+   }catch(Exception e){handler.post(()->{if(active){pollInFlight=false;connectionStatus.setText("Backend: DISCONNECTED");taskRunning=false;handler.removeCallbacks(poll);status("Local connection failed");activity("◉ CONNECTION ERROR\\n"+e.getClass().getSimpleName()+": "+e.getMessage()+"\\nMake sure Termux is still running.");diagnostics(e.toString());}});}
    finally{if(conn!=null)conn.disconnect();}
   });
  }
