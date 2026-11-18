@@ -142,8 +142,11 @@ public final class MainActivity extends Activity {
   deviceStatus=label("Checking...");
   button("Refresh device status",()->refreshDevice());
   refreshDevice();
-  title("RESPONSE");
-  output=label("Ready — choose cloud mode for Ollama, or start your local backend.");
+  beginPage(1);
+  title("TASK RESULT");
+  output=label("Your completed task output will appear here.");
+  output.setTextColor(TEXT);output.setTextIsSelectable(true);
+  output.setBackground(shape(PANEL,0xff30435f));output.setPadding(dp(14),dp(12),dp(14),dp(12));
   showPage(0);
  }
  private void addNavigation(){
