@@ -142,7 +142,8 @@ def work(tid,prompt):
    with db() as c:discussion.post(c,tid,name,kind,discussion.summary(answer))
    notes.append(name.upper()+": "+answer[:5000])
    with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
-  build_artifact(tid,[outputs.get("engineer",""),outputs.get("engineer_revision",""),outputs.get("synthesizer","")],prompt,memory)
+  if re.search(r"\\b(html|browser game|snake game|web game|javascript game)\\b",prompt,re.I):
+   build_artifact(tid,[outputs.get("engineer",""),outputs.get("engineer_revision",""),outputs.get("synthesizer","")],prompt,memory)
   with db() as c:c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(outputs["synthesizer"],tid))
  except Exception as e:
   error=type(e).__name__+": "+str(e)[:500]
