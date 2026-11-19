@@ -78,29 +78,33 @@ def agent_prompt(name,instruction,prompt,memory,notes):
  return "\\n\\n".join(sections)
 
 def build_artifact(tid,outputs,prompt,memory):
- source=workspace.extract(outputs)
- if source is None:return None
- report=workspace.validate(source)
+ # A completed agent conversation is not proof of a completed file.
+ source,reason=workspace.candidate(outputs)
+ report=workspace.diagnose(outputs)
+ if not report["valid"]:
+  with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"validator","failed","; ".join(report["errors"])[:1000]))
  for attempt in range(2):
   if report["valid"]:break
-  with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"validator","failed","; ".join(report["errors"])[:1000]))
-  repair_request=("Repair this single-file HTML artifact. Return ONLY one complete ```html fenced block. "
-                  "Fix the static validation errors; do not use external dependencies or network APIs. "
-                  "Do not claim that it was executed or gameplay tested.\\nErrors: "+json.dumps(report["errors"])+
-                  "\\nOriginal request: "+prompt+"\\nCurrent HTML:\\n"+source[:18000])
-  with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","running","Repair attempt "+str(attempt+1)))
+  # Ask for a small complete replacement, not an ever-growing conversation.
+  repair_request=("Produce a COMPLETE minimal standalone HTML document for this request. "
+                  "Return ONLY one ```html fenced code block, including closing </script>, </body>, </html> and closing code fence. "
+                  "Use inline CSS and JS only, no external dependencies or network calls. "
+                  "Keep the implementation concise, suitable for a small local model. "
+                  "Do not claim it has been executed or gameplay-tested.\\n"
+                  "Original request: "+prompt[:1500]+"\\n"
+                  "Problems: "+json.dumps(report["errors"])+"\\n"
+                  "Previous partial draft (reference only):\\n"+(source or "")[:3000])
+  with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","running","Artifact repair attempt "+str(attempt+1)))
   fixed=infer(repair_request)
-  replacement=workspace.extract([fixed])
-  if not replacement:
-   with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","failed","Repair did not contain an HTML code block"))
-   break
-  source=replacement;report=workspace.validate(source)
-  with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","done","Repair attempt "+str(attempt+1)+" completed"))
+  new_source,new_reason=workspace.candidate([fixed])
+  if new_source is not None:source=new_source
+  report=workspace.diagnose([fixed])
+  with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","done" if report["valid"] else "failed","Repair attempt "+str(attempt+1)+(": static checks passed" if report["valid"] else ": "+"; ".join(report["errors"])[:700])))
  if not report["valid"]:
-  with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"validator","failed","Artifact rejected: "+"; ".join(report["errors"])[:1000]))
+  with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"workspace","failed","No preview saved: "+"; ".join(report["errors"])[:1000]))
   return None
  artifact=workspace.save(ARTIFACTS,tid,source,report)
- with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"validator","done","Static checks passed; JavaScript and gameplay not executed"))
+ with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"workspace","done","Saved HTML preview after static checks; gameplay not verified"))
  return artifact
 
 
