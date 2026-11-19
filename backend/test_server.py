@@ -118,6 +118,17 @@ class BackendTests(unittest.TestCase):
   self.assertEqual(body["task"]["status"],"done")
   self.assertEqual(body["task"]["result"],replies[-1])
   self.assertEqual(len([e for e in body["events"] if e["status"]=="done"]),6)
+  self.assertEqual([item["kind"] for item in body["discussion"]],["goal","proposal","finding","proposal","concern","revision","decision"])
+  self.assertIn("critic [concern]: Code review",inference.call_args_list[4].args[0])
+ def test_discussion_board_is_bounded_and_per_task(self):
+  with server.db() as c:
+   for i in range(30):server.discussion.post(c,"board-test","critic","concern","Issue "+str(i))
+   server.discussion.post(c,"other-task","planner","goal","Private task note")
+  with server.db() as c:
+   items=server.discussion.entries(c,"board-test")
+  self.assertEqual(len(items),24)
+  self.assertEqual(items[0]["content"],"Issue 6")
+  self.assertNotIn("Private task note",server.discussion.context(items))
  def test_agent_failure_is_visible_and_releases_lock(self):
   tid="test-agent-error"
   with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Test failure","running",""))
