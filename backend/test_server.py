@@ -185,6 +185,26 @@ class BackendTests(unittest.TestCase):
   self.assertTrue(artifact["validated"])
   _,task=self.call("/api/tasks/"+tid)
   self.assertEqual(task["artifact"]["validation_scope"],"static only")
+ def test_truncated_html_is_diagnosed_and_repaired(self):
+  tid="d"*32
+  with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Snake HTML game","running",""))
+  partial="```html\\n<html><body><script>function draw() {"
+  complete="```html\\n<html><body><script>function draw() {}</script></body></html>\\n```"
+  self.assertIn("cut off",server.workspace.diagnose([partial])["errors"][0])
+  with patch.object(server,"infer",return_value=complete) as inference:
+   artifact=server.build_artifact(tid,[partial],"Snake HTML game","")
+  self.assertEqual(inference.call_count,1)
+  self.assertTrue(artifact["validated"])
+  _,body=self.call("/api/tasks/"+tid)
+  self.assertTrue(any(e["agent"]=="validator" and e["status"]=="failed" for e in body["events"]))
+ def test_missing_html_reports_failure_after_bounded_repairs(self):
+  tid="e"*32
+  with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"HTML game","running",""))
+  with patch.object(server,"infer",return_value="Here is a plan") as inference:
+   self.assertIsNone(server.build_artifact(tid,["No code"],"HTML game",""))
+  self.assertEqual(inference.call_count,2)
+  _,body=self.call("/api/tasks/"+tid)
+  self.assertTrue(any(e["agent"]=="workspace" and e["status"]=="failed" for e in body["events"]))
  def test_movie_not_falsely_advertised(self):
   self.assertEqual(self.call("/api/video",{"scenes":["x"]})[0],501)
 
