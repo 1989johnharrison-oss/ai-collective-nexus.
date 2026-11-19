@@ -103,20 +103,21 @@ class BackendTests(unittest.TestCase):
  def test_agent_handoffs_and_final_result(self):
   tid="test-five-agent-flow"
   with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Create a game","running",""))
-  replies=["Plan","Facts and assumptions","Game source code","Code review","Final playable game instructions"]
+  replies=["Plan","Facts and assumptions","Game source code","Code review","Revised game source code","Final playable game instructions"]
   with patch.object(server,"recall",return_value="Relevant note"):
    with patch.object(server,"infer",side_effect=replies) as inference:
     self.assertTrue(server.LOCK.acquire(False))
     server.work(tid,"Create a game")
-  self.assertEqual(inference.call_count,5)
+  self.assertEqual(inference.call_count,6)
   self.assertIn("PLANNER: Plan",inference.call_args_list[1].args[0])
   self.assertIn("ENGINEER: Game source code",inference.call_args_list[3].args[0])
   self.assertIn("CRITIC: Code review",inference.call_args_list[4].args[0])
+  self.assertIn("ENGINEER REVISION: Revised game source code",inference.call_args_list[5].args[0])
   status,body=self.call("/api/tasks/"+tid)
   self.assertEqual(status,200)
   self.assertEqual(body["task"]["status"],"done")
   self.assertEqual(body["task"]["result"],replies[-1])
-  self.assertEqual(len([e for e in body["events"] if e["status"]=="done"]),5)
+  self.assertEqual(len([e for e in body["events"] if e["status"]=="done"]),6)
  def test_agent_failure_is_visible_and_releases_lock(self):
   tid="test-agent-error"
   with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Test failure","running",""))
