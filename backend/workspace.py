@@ -44,6 +44,27 @@ def extract(outputs):
    if source:return source
  return None
 
+def candidate(outputs):
+ """Return the last complete fenced HTML or an incomplete candidate and its reason."""
+ for answer in reversed(outputs):
+  if not isinstance(answer,str):continue
+  blocks=list(BLOCK.finditer(answer))
+  if blocks:
+   return blocks[-1].group(1).strip(),None
+  opening=re.search(r"```html\\s*\\n",answer,re.I)
+  if opening:
+   return answer[opening.end():].strip(),"HTML code block was cut off before its closing fence"
+ return None,"No HTML code block was generated"
+
+def diagnose(outputs):
+ source,reason=candidate(outputs)
+ if source is None:return {"valid":False,"errors":[reason],"warnings":[],"checks":[]}
+ report=validate(source)
+ if reason:
+  report["valid"]=False
+  report["errors"].insert(0,reason)
+ return report
+
 def workspace_path(root,task_id):
  if not ID.fullmatch(task_id):raise ValueError("Invalid task ID")
  return Path(root)/task_id
