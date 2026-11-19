@@ -104,28 +104,38 @@ def build_artifact(tid,outputs,prompt,memory):
 
 def work(tid,prompt):
  notes=[]
+ outputs={}
  current_agent=None
  try:
   memory=recall(prompt)
+  # Five roles share their previous outputs; a single targeted revision closes the loop.
   for name,instruction in ROLES:
    current_agent=name
-   with db() as c:
-    c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"running","Working"))
+   if name=="synthesizer" and MODE!="eco":
+    current_agent="engineer"
+    with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","running","Revising after critic feedback"))
+    revision_prompt=agent_prompt("engineer","Revise your earlier deliverable using the Critic's concrete feedback. Preserve working features. For HTML games return a complete single-file ```html code block. Do not claim execution or testing.",prompt,memory,notes)
+    revised=infer(revision_prompt)
+    if isinstance(revised,str) and revised.strip():
+     outputs["engineer_revision"]=revised.strip()
+     notes.append("ENGINEER REVISION: "+revised.strip()[:5000])
+     with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","done","Revised after critic feedback: "+revised.strip()[:1400]))
+    else:
+     with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","failed","Revision was empty; retaining original draft"))
+    current_agent=name
+   with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"running","Working with shared team notes"))
    answer=infer(agent_prompt(name,instruction,prompt,memory,notes))
-   if not isinstance(answer,str) or not answer.strip():
-    raise ValueError(name+" returned an empty response")
+   if not isinstance(answer,str) or not answer.strip():raise ValueError(name+" returned an empty response")
    answer=answer.strip()
+   outputs[name]=answer
    notes.append(name.upper()+": "+answer[:5000])
-   with db() as c:
-    c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
-  build_artifact(tid,[notes[2] if len(notes)>2 else "",answer],prompt,memory)
-  # Keep the final user-facing result clean, while individual contributions remain in events.
-  with db() as c:c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(answer,tid))
+   with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
+  build_artifact(tid,[outputs.get("engineer",""),outputs.get("engineer_revision",""),outputs.get("synthesizer","")],prompt,memory)
+  with db() as c:c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(outputs["synthesizer"],tid))
  except Exception as e:
   error=type(e).__name__+": "+str(e)[:500]
   with db() as c:
-   if current_agent:
-    c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,current_agent,"failed",error))
+   if current_agent:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,current_agent,"failed",error))
    c.execute("UPDATE tasks SET status='failed',result=? WHERE id=?",(error,tid))
  finally:LOCK.release()
 
