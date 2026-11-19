@@ -6,6 +6,7 @@ import json, os, re, sqlite3, threading, time, uuid, urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import workspace
+import discussion
 
 PORT=8765
 DB=Path(__file__).with_name("nexus.sqlite3")
@@ -33,6 +34,7 @@ def db():
  c.execute("CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, created REAL, prompt TEXT, status TEXT, result TEXT)")
  c.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, agent TEXT, status TEXT, detail TEXT)")
  c.execute("CREATE TABLE IF NOT EXISTS knowledge (id TEXT PRIMARY KEY, title TEXT, body TEXT)")
+ discussion.initialize(c)
  c.execute("CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id,id)")
  c.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created DESC)")
  c.commit()
@@ -108,15 +110,18 @@ def work(tid,prompt):
  current_agent=None
  try:
   memory=recall(prompt)
+  with db() as c:discussion.post(c,tid,"planner","goal",prompt)
   # Five roles share their previous outputs; a single targeted revision closes the loop.
   for name,instruction in ROLES:
    current_agent=name
    if name=="synthesizer" and MODE!="eco":
     current_agent="engineer"
     with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","running","Revising after critic feedback"))
-    revision_prompt=agent_prompt("engineer","Revise your earlier deliverable using the Critic's concrete feedback. Preserve working features. For HTML games return a complete single-file ```html code block. Do not claim execution or testing.",prompt,memory,notes)
+    with db() as c:board=discussion.context(discussion.entries(c,tid))
+    revision_prompt=agent_prompt("engineer","Revise your earlier deliverable using the Critic's concrete feedback. Preserve working features. For HTML games return a complete single-file ```html code block. Do not claim execution or testing.",prompt,memory,notes+[board])
     revised=infer(revision_prompt)
     if isinstance(revised,str) and revised.strip():
+     with db() as c:discussion.post(c,tid,"engineer","revision",discussion.summary(revised))
      outputs["engineer_revision"]=revised.strip()
      notes.append("ENGINEER REVISION: "+revised.strip()[:5000])
      with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","done","Revised after critic feedback: "+revised.strip()[:1400]))
@@ -124,10 +129,13 @@ def work(tid,prompt):
      with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","failed","Revision was empty; retaining original draft"))
     current_agent=name
    with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"running","Working with shared team notes"))
-   answer=infer(agent_prompt(name,instruction,prompt,memory,notes))
+   with db() as c:board=discussion.context(discussion.entries(c,tid))
+   answer=infer(agent_prompt(name,instruction,prompt,memory,notes+[board]))
    if not isinstance(answer,str) or not answer.strip():raise ValueError(name+" returned an empty response")
    answer=answer.strip()
    outputs[name]=answer
+   kind={"planner":"proposal","researcher":"finding","engineer":"proposal","critic":"concern","synthesizer":"decision"}[name]
+   with db() as c:discussion.post(c,tid,name,kind,discussion.summary(answer))
    notes.append(name.upper()+": "+answer[:5000])
    with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
   build_artifact(tid,[outputs.get("engineer",""),outputs.get("engineer_revision",""),outputs.get("synthesizer","")],prompt,memory)
@@ -184,7 +192,8 @@ class API(BaseHTTPRequestHandler):
     ev=c.execute("SELECT agent,status,detail FROM events WHERE task_id=? ORDER BY id",(path[11:],)).fetchall()
    if not r:return self.send(404,{"error":"Task not found"})
    artifact=workspace.workspace_path(ARTIFACTS,path[11:])/"index.html" if re.fullmatch(r"[0-9a-f]{32}",path[11:]) else ARTIFACTS/"nonexistent"
-   return self.send(200,{"task":dict(zip(("id","created","prompt","status","result"),r)),"events":[dict(zip(("agent","status","detail"),e)) for e in ev],"artifact":{"type":"html","preview_url":"/api/artifacts/"+path[11:],"name":"index.html","validated":True,"validation_scope":"static only"} if artifact.is_file() else None})
+   with db() as c:board=discussion.entries(c,path[11:])
+   return self.send(200,{"task":dict(zip(("id","created","prompt","status","result"),r)),"discussion":board,"events":[dict(zip(("agent","status","detail"),e)) for e in ev],"artifact":{"type":"html","preview_url":"/api/artifacts/"+path[11:],"name":"index.html","validated":True,"validation_scope":"static only"} if artifact.is_file() else None})
   if path=="/api/video/jobs":return self.send(200,{"jobs":[],"note":"Storyboard renderer not installed in this lightweight backend"})
   return self.send(404,{"error":"Unknown endpoint"})
  def do_POST(self):
