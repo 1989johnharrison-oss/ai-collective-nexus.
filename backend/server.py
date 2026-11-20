@@ -152,7 +152,8 @@ def work(tid,prompt):
   for name,instruction in ROLES[:4]:
    current_agent=name
    with db() as c:
-    c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"running","Working with shared team notes"))
+    if name not in initial:
+     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"running","Working with shared team notes"))
     board=discussion.context(discussion.entries(c,tid))
    answer=initial[name] if name in initial else infer(agent_prompt(name,instruction,prompt,memory,notes+[board]))
    if not isinstance(answer,str) or not answer.strip():raise ValueError(name+" returned an empty response")
