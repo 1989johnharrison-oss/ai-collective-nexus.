@@ -26,6 +26,9 @@ class BackendTests(unittest.TestCase):
  @classmethod
  def tearDownClass(cls):
   cls.http.shutdown();cls.http.server_close();cls.thread.join();cls.tmp.cleanup()
+ def setUp(self):
+  # Performance mode is process-global; each test must start independently.
+  with server.MODE_LOCK:server.MODE="balanced"
  def call(self,path,body=None):
   data=None if body is None else json.dumps(body).encode()
   req=urllib.request.Request(self.url+path,data=data,headers={"Content-Type":"application/json"})
