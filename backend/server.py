@@ -118,52 +118,80 @@ def build_artifact(tid,outputs,prompt,memory):
 def wants_html_artifact(prompt):
  return bool(re.search(r"\b(html|browser game|snake game|web game|javascript game)\b",prompt,re.I))
 
+def review_rounds(mode):
+ return {"eco":1,"balanced":2,"performance":3}[mode]
+
 def work(tid,prompt):
  notes=[]
  outputs={}
  current_agent=None
+ # Snapshot settings so changing modes does not alter a running task.
+ with MODE_LOCK:task_mode=MODE
  try:
   memory=recall(prompt)
   with db() as c:discussion.post(c,tid,"planner","goal",prompt)
-  # Five roles share their previous outputs; a single targeted revision closes the loop.
-  for name,instruction in ROLES:
+  for name,instruction in ROLES[:4]:
    current_agent=name
-   if name=="synthesizer" and MODE!="eco":
-    current_agent="engineer"
-    with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","running","Revising after critic feedback"))
-    with db() as c:board=discussion.context(discussion.entries(c,tid))
-    revision_prompt=agent_prompt("engineer","Revise your earlier deliverable using the Critic's concrete feedback. Preserve working features. For HTML games return a complete single-file ```html code block. Do not claim execution or testing.",prompt,memory,notes+[board])
-    revised=infer(revision_prompt)
-    if isinstance(revised,str) and revised.strip():
-     with db() as c:discussion.post(c,tid,"engineer","revision",discussion.summary(revised))
-     outputs["engineer_revision"]=revised.strip()
-     notes.append("ENGINEER REVISION: "+revised.strip()[:5000])
-     with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","done","Revised after critic feedback: "+revised.strip()[:1400]))
-    else:
-     with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","failed","Revision was empty; retaining original draft"))
-    current_agent=name
-   with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"running","Working with shared team notes"))
-   with db() as c:board=discussion.context(discussion.entries(c,tid))
+   with db() as c:
+    c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"running","Working with shared team notes"))
+    board=discussion.context(discussion.entries(c,tid))
    answer=infer(agent_prompt(name,instruction,prompt,memory,notes+[board]))
    if not isinstance(answer,str) or not answer.strip():raise ValueError(name+" returned an empty response")
    answer=answer.strip()
    outputs[name]=answer
-   kind={"planner":"proposal","researcher":"finding","engineer":"proposal","critic":"concern","synthesizer":"decision"}[name]
-   with db() as c:discussion.post(c,tid,name,kind,discussion.summary(answer))
+   kind={"planner":"proposal","researcher":"finding","engineer":"proposal","critic":"concern"}[name]
+   with db() as c:
+    discussion.post(c,tid,name,kind,discussion.summary(answer))
+    c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
    notes.append(name.upper()+": "+answer[:5000])
-   with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
+  for round_number in range(1,review_rounds(task_mode)+1):
+   current_agent="engineer"
+   with db() as c:
+    c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","running","Review cycle "+str(round_number)+": applying critic feedback"))
+    board=discussion.context(discussion.entries(c,tid))
+   instruction=("Revise the latest engineer deliverable in response to the latest critic feedback. "
+                "Preserve working features and return the COMPLETE deliverable, not a summary. "
+                "For HTML return one complete fenced html document. Do not claim tests were run.")
+   revised=infer(agent_prompt("engineer",instruction,prompt,memory,notes+[board]))
+   if not isinstance(revised,str) or not revised.strip():raise ValueError("engineer revision returned an empty response")
+   revised=revised.strip()
+   outputs["engineer_revision"]=revised
+   with db() as c:
+    discussion.post(c,tid,"engineer","revision",discussion.summary(revised))
+    c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","done","Review cycle "+str(round_number)+": "+revised[:1300]))
+   notes.append("ENGINEER REVISION "+str(round_number)+": "+revised[:5000])
+   if round_number==review_rounds(task_mode):break
+   current_agent="critic"
+   with db() as c:
+    c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"critic","running","Review cycle "+str(round_number+1)+": checking revised deliverable"))
+    board=discussion.context(discussion.entries(c,tid))
+   critique=infer(agent_prompt("critic","Review the LATEST engineer revision, not the original. Identify remaining actionable defects and prioritize them. Do not claim execution.",prompt,memory,notes+[board]))
+   if not isinstance(critique,str) or not critique.strip():raise ValueError("critic returned an empty review")
+   critique=critique.strip()
+   outputs["critic"]=critique
+   with db() as c:
+    discussion.post(c,tid,"critic","concern",discussion.summary(critique))
+    c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"critic","done",critique[:2000]))
+   notes.append("CRITIC REVIEW "+str(round_number+1)+": "+critique[:5000])
+  current_agent="synthesizer"
+  with db() as c:
+   c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"synthesizer","running","Consolidating reviewed deliverable"))
+   board=discussion.context(discussion.entries(c,tid))
+  answer=infer(agent_prompt("synthesizer",ROLES[4][1],prompt,memory,notes+[board]))
+  if not isinstance(answer,str) or not answer.strip():raise ValueError("synthesizer returned an empty response")
+  outputs["synthesizer"]=answer.strip()
+  with db() as c:
+   discussion.post(c,tid,"synthesizer","decision",discussion.summary(answer))
+   c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"synthesizer","done",answer[:2000]))
   if wants_html_artifact(prompt):
-   # Prefer the critic-informed revision over the first engineer draft.
    candidates=[outputs.get("engineer_revision",""),outputs.get("engineer",""),outputs.get("synthesizer","")]
    artifact=build_artifact(tid,candidates,prompt,memory)
    if artifact is None:
-    with db() as c:
-     c.execute("UPDATE tasks SET status='failed',result=? WHERE id=?",("HTML artifact validation failed after repair attempts. See validator and workspace events for details.",tid))
+    with db() as c:c.execute("UPDATE tasks SET status='failed',result=? WHERE id=?",("HTML artifact validation failed after repair attempts. See validator and workspace events for details.",tid))
     return
-   with db() as c:
-    c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(outputs["synthesizer"]+"\\n\\nHTML preview saved; static validation passed. Gameplay has not been tested.",tid))
-  else:
-   with db() as c:c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(outputs["synthesizer"],tid))
+   result=answer.strip()+"\\n\\nHTML preview saved; static validation passed. Gameplay has not been tested."
+  else:result=answer.strip()
+  with db() as c:c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(result,tid))
  except Exception as e:
   error=type(e).__name__+": "+str(e)[:500]
   with db() as c:
@@ -198,7 +226,7 @@ class API(BaseHTTPRequestHandler):
    self.send_header("Content-Length",str(len(content)))
    self.end_headers();self.wfile.write(content);return
   if path=="/api/health":return self.send(200,{"status":"ok","backend":ENGINE,"model":MODEL,"mode":MODE,"inference_ready":model_ready(),"api_key_required":False,"phone_local":ENGINE=="llamacpp"})
-  if path=="/api/performance":return self.send(200,{"mode":MODE,"max_output_tokens":LIMITS[MODE]})
+  if path=="/api/performance":return self.send(200,{"mode":MODE,"max_output_tokens":LIMITS[MODE],"review_rounds":review_rounds(MODE),"available_modes":["eco","balanced","performance"]})
   if path=="/api/capabilities":return self.send(200,{"local_inference":ENGINE=="llamacpp","api_key_required":False,"cloud_inference":False,"persistent_memory":True,"five_agent_workflow":True,"movie_rendering":False,"native_android_inference":False,"requires_termux":True,"html_artifact_export":True,"artifact_execution":False})
   if path=="/api/knowledge":
    with db() as c:rows=c.execute("SELECT id,title,body FROM knowledge ORDER BY rowid DESC LIMIT 100").fetchall()
