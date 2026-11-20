@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -31,6 +32,22 @@ class BackendTests(unittest.TestCase):
   try:
    with urllib.request.urlopen(req,timeout=3) as response:return response.status,json.load(response)
   except urllib.error.HTTPError as e:return e.code,json.load(e)
+ def test_database_connection_closes_after_transaction(self):
+  with patch.object(server.sqlite3,"connect",wraps=sqlite3.connect) as connect:
+   with server.db() as connection:
+    self.assertEqual(connection.execute("SELECT 1").fetchone(),(1,))
+   self.assertTrue(connect.called)
+   with self.assertRaises(sqlite3.ProgrammingError):
+    connection.execute("SELECT 1")
+ def test_database_transaction_rolls_back_and_closes_on_error(self):
+  with self.assertRaisesRegex(RuntimeError,"rollback check"):
+   with server.db() as connection:
+    connection.execute("INSERT INTO knowledge(id,title,body) VALUES(?,?,?)",("rollback-test","Title","Body"))
+    raise RuntimeError("rollback check")
+  with self.assertRaises(sqlite3.ProgrammingError):
+   connection.execute("SELECT 1")
+  with server.db() as connection:
+   self.assertIsNone(connection.execute("SELECT id FROM knowledge WHERE id=?",("rollback-test",)).fetchone())
  def test_health(self):
   code,obj=self.call("/api/health")
   self.assertEqual(code,200);self.assertEqual(obj["status"],"ok")
