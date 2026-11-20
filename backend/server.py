@@ -115,6 +115,9 @@ def build_artifact(tid,outputs,prompt,memory):
  return artifact
 
 
+def wants_html_artifact(prompt):
+ return bool(re.search(r"\b(html|browser game|snake game|web game|javascript game)\b",prompt,re.I))
+
 def work(tid,prompt):
  notes=[]
  outputs={}
@@ -149,7 +152,7 @@ def work(tid,prompt):
    with db() as c:discussion.post(c,tid,name,kind,discussion.summary(answer))
    notes.append(name.upper()+": "+answer[:5000])
    with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
-  if re.search(r"\b(html|browser game|snake game|web game|javascript game)\b",prompt,re.I):
+  if wants_html_artifact(prompt):
    build_artifact(tid,[outputs.get("engineer",""),outputs.get("engineer_revision",""),outputs.get("synthesizer","")],prompt,memory)
   with db() as c:c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(outputs["synthesizer"],tid))
  except Exception as e:
