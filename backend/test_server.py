@@ -144,6 +144,35 @@ class BackendTests(unittest.TestCase):
   self.assertEqual(len([e for e in body["events"] if e["status"]=="done"]),6)
   self.assertEqual([item["kind"] for item in body["discussion"]],["goal","proposal","finding","proposal","concern","revision","decision"])
   self.assertIn("critic [concern]: Code review",inference.call_args_list[4].args[0])
+ def test_html_task_does_not_claim_success_without_artifact(self):
+  tid="test-html-no-artifact"
+  with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Build an HTML game","running",""))
+  replies=["Plan","Facts","Incomplete draft","Review","Incomplete revision","Summary","Still no code","Still no code"]
+  with patch.object(server,"recall",return_value=""):
+   with patch.object(server,"infer",side_effect=replies):
+    self.assertTrue(server.LOCK.acquire(False))
+    server.work(tid,"Build an HTML game")
+  _,body=self.call("/api/tasks/"+tid)
+  self.assertEqual(body["task"]["status"],"failed")
+  self.assertIn("validation failed",body["task"]["result"])
+  self.assertIsNone(body["artifact"])
+  self.assertTrue(any(e["agent"]=="workspace" and e["status"]=="failed" for e in body["events"]))
+ def test_html_task_prefers_revised_artifact(self):
+  tid="f"*32
+  with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Build an HTML game","running",""))
+  first="\x60\x60\x60html\\n<html><body><h1>Old</h1></body></html>\\n\x60\x60\x60"
+  revised="\x60\x60\x60html\\n<html><body><h1>Revised</h1></body></html>\\n\x60\x60\x60"
+  replies=["Plan","Facts",first,"Review",revised,"Summary"]
+  with patch.object(server,"recall",return_value=""):
+   with patch.object(server,"infer",side_effect=replies):
+    self.assertTrue(server.LOCK.acquire(False))
+    server.work(tid,"Build an HTML game")
+  _,body=self.call("/api/tasks/"+tid)
+  self.assertEqual(body["task"]["status"],"done")
+  self.assertTrue(body["artifact"]["validated"])
+  self.assertIn("Gameplay has not been tested",body["task"]["result"])
+  with urllib.request.urlopen(self.url+"/api/artifacts/"+tid,timeout=3) as response:
+   self.assertIn("Revised",response.read().decode())
  def test_discussion_board_is_bounded_and_per_task(self):
   with server.db() as c:
    for i in range(30):server.discussion.post(c,"board-test","critic","concern","Issue "+str(i))
