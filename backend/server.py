@@ -153,8 +153,17 @@ def work(tid,prompt):
    notes.append(name.upper()+": "+answer[:5000])
    with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
   if wants_html_artifact(prompt):
-   build_artifact(tid,[outputs.get("engineer",""),outputs.get("engineer_revision",""),outputs.get("synthesizer","")],prompt,memory)
-  with db() as c:c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(outputs["synthesizer"],tid))
+   # Prefer the critic-informed revision over the first engineer draft.
+   candidates=[outputs.get("engineer_revision",""),outputs.get("engineer",""),outputs.get("synthesizer","")]
+   artifact=build_artifact(tid,candidates,prompt,memory)
+   if artifact is None:
+    with db() as c:
+     c.execute("UPDATE tasks SET status='failed',result=? WHERE id=?",("HTML artifact validation failed after repair attempts. See validator and workspace events for details.",tid))
+    return
+   with db() as c:
+    c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(outputs["synthesizer"]+"\\n\\nHTML preview saved; static validation passed. Gameplay has not been tested.",tid))
+  else:
+   with db() as c:c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(outputs["synthesizer"],tid))
  except Exception as e:
   error=type(e).__name__+": "+str(e)[:500]
   with db() as c:
