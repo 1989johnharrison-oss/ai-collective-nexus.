@@ -4,6 +4,7 @@ Run with local llama.cpp on the same Android phone (Termux) or Ollama.
 """
 import json, os, re, sqlite3, threading, time, uuid, urllib.request
 from contextlib import contextmanager
+from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import workspace
@@ -130,12 +131,30 @@ def work(tid,prompt):
  try:
   memory=recall(prompt)
   with db() as c:discussion.post(c,tid,"planner","goal",prompt)
+  # Performance mode lets independent planning and research overlap.
+  # Engineer still waits for both so it receives their actual findings.
+  initial={}
+  if task_mode=="performance":
+   def independent(name,instruction):
+    with db() as c:
+     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"running","Parallel discovery"))
+    answer=infer(agent_prompt(name,instruction,prompt,memory,[]))
+    if not isinstance(answer,str) or not answer.strip():
+     raise ValueError(name+" returned an empty response")
+    return answer.strip()
+   with ThreadPoolExecutor(max_workers=2,thread_name_prefix="nexus-agent") as pool:
+    jobs={name:pool.submit(independent,name,instruction) for name,instruction in ROLES[:2]}
+    for name in ("planner","researcher"):
+     try:initial[name]=jobs[name].result()
+     except Exception as error:
+      current_agent=name
+      raise RuntimeError(name+" parallel discovery failed: "+str(error)) from error
   for name,instruction in ROLES[:4]:
    current_agent=name
    with db() as c:
     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"running","Working with shared team notes"))
     board=discussion.context(discussion.entries(c,tid))
-   answer=infer(agent_prompt(name,instruction,prompt,memory,notes+[board]))
+   answer=initial[name] if name in initial else infer(agent_prompt(name,instruction,prompt,memory,notes+[board]))
    if not isinstance(answer,str) or not answer.strip():raise ValueError(name+" returned an empty response")
    answer=answer.strip()
    outputs[name]=answer
