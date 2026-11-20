@@ -51,7 +51,7 @@ def candidate(outputs):
   blocks=list(BLOCK.finditer(answer))
   if blocks:
    return blocks[-1].group(1).strip(),None
-  opening=re.search(r"```html\\s*\\n",answer,re.I)
+  opening=re.search(r"```html\s*\n",answer,re.I)
   if opening:
    return answer[opening.end():].strip(),"HTML code block was cut off before its closing fence"
  return None,"No HTML code block was generated"
