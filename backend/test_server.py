@@ -167,8 +167,8 @@ class BackendTests(unittest.TestCase):
  def test_html_task_prefers_revised_artifact(self):
   tid="f"*32
   with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Build an HTML game","running",""))
-  first="\x60\x60\x60html\\n<html><body><h1>Old</h1></body></html>\\n\x60\x60\x60"
-  revised="\x60\x60\x60html\\n<html><body><h1>Revised</h1></body></html>\\n\x60\x60\x60"
+  first="\x60\x60\x60html\n<html><body><h1>Old</h1></body></html>\n\x60\x60\x60"
+  revised="\x60\x60\x60html\n<html><body><h1>Revised</h1></body></html>\n\x60\x60\x60"
   replies=["Plan","Facts",first,"Review",revised,"Second review",revised,"Summary"]
   with patch.object(server,"recall",return_value=""):
    with patch.object(server,"infer",side_effect=replies):
