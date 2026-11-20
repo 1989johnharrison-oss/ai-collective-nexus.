@@ -184,7 +184,7 @@ def work(tid,prompt):
    discussion.post(c,tid,"synthesizer","decision",discussion.summary(answer))
    c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"synthesizer","done",answer[:2000]))
   if wants_html_artifact(prompt):
-   candidates=[outputs.get("engineer_revision",""),outputs.get("engineer",""),outputs.get("synthesizer","")]
+   # workspace.candidate scans from the end: put the reviewed revision last.\n   candidates=[outputs.get("synthesizer",""),outputs.get("engineer",""),outputs.get("engineer_revision","")]
    artifact=build_artifact(tid,candidates,prompt,memory)
    if artifact is None:
     with db() as c:c.execute("UPDATE tasks SET status='failed',result=? WHERE id=?",("HTML artifact validation failed after repair attempts. See validator and workspace events for details.",tid))
