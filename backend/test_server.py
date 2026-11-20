@@ -48,6 +48,13 @@ class BackendTests(unittest.TestCase):
    connection.execute("SELECT 1")
   with server.db() as connection:
    self.assertIsNone(connection.execute("SELECT id FROM knowledge WHERE id=?",("rollback-test",)).fetchone())
+ def test_html_artifact_intent(self):
+  for prompt in ("Build an HTML Snake game","Create a browser game","Make a javascript game"):
+   with self.subTest(prompt=prompt):
+    self.assertTrue(server.wants_html_artifact(prompt))
+  for prompt in ("Explain Python decorators","Summarize my notes"):
+   with self.subTest(prompt=prompt):
+    self.assertFalse(server.wants_html_artifact(prompt))
  def test_health(self):
   code,obj=self.call("/api/health")
   self.assertEqual(code,200);self.assertEqual(obj["status"],"ok")
