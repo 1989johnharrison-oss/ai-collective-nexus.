@@ -149,7 +149,7 @@ def work(tid,prompt):
    with db() as c:discussion.post(c,tid,name,kind,discussion.summary(answer))
    notes.append(name.upper()+": "+answer[:5000])
    with db() as c:c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,name,"done",answer[:2000]))
-  if re.search(r"\\b(html|browser game|snake game|web game|javascript game)\\b",prompt,re.I):
+  if re.search(r"\b(html|browser game|snake game|web game|javascript game)\b",prompt,re.I):
    build_artifact(tid,[outputs.get("engineer",""),outputs.get("engineer_revision",""),outputs.get("synthesizer","")],prompt,memory)
   with db() as c:c.execute("UPDATE tasks SET status='done',result=? WHERE id=?",(outputs["synthesizer"],tid))
  except Exception as e:
@@ -249,4 +249,10 @@ class API(BaseHTTPRequestHandler):
 if __name__=="__main__":
  with db() as c:c.execute("UPDATE tasks SET status='failed',result='Interrupted by restart' WHERE status='running'")
  print("Nexus phone backend: http://127.0.0.1:%s | engine=%s model=%s"%(PORT,ENGINE,MODEL),flush=True)
- ThreadingHTTPServer(("127.0.0.1",PORT),API).serve_forever()
+ server=ThreadingHTTPServer(("127.0.0.1",PORT),API)
+ try:
+  server.serve_forever()
+ except KeyboardInterrupt:
+  print("\\nNexus backend stopped.",flush=True)
+ finally:
+  server.server_close()
