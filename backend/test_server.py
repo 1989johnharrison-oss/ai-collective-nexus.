@@ -188,8 +188,8 @@ class BackendTests(unittest.TestCase):
  def test_truncated_html_is_diagnosed_and_repaired(self):
   tid="d"*32
   with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Snake HTML game","running",""))
-  partial="```html\\n<html><body><script>function draw() {"
-  complete="```html\\n<html><body><script>function draw() {}</script></body></html>\\n```"
+  partial="```html\n<html><body><script>function draw() {"
+  complete="```html\n<html><body><script>function draw() {}</script></body></html>\n```"
   self.assertIn("cut off",server.workspace.diagnose([partial])["errors"][0])
   with patch.object(server,"infer",return_value=complete) as inference:
    artifact=server.build_artifact(tid,[partial],"Snake HTML game","")
