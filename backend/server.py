@@ -3,6 +3,7 @@
 Run with local llama.cpp on the same Android phone (Termux) or Ollama.
 """
 import json, os, re, sqlite3, threading, time, uuid, urllib.request
+from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import workspace
@@ -29,16 +30,22 @@ TASK_STATES=("running","done","failed")
 MODE_LOCK=threading.Lock()
 MODE="balanced"
 LIMITS={"eco":256,"balanced":512,"performance":1024}
+@contextmanager
 def db():
+ """Open a transaction and always close its SQLite connection."""
  c=sqlite3.connect(DB,timeout=20)
- c.execute("CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, created REAL, prompt TEXT, status TEXT, result TEXT)")
- c.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, agent TEXT, status TEXT, detail TEXT)")
- c.execute("CREATE TABLE IF NOT EXISTS knowledge (id TEXT PRIMARY KEY, title TEXT, body TEXT)")
- discussion.initialize(c)
- c.execute("CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id,id)")
- c.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created DESC)")
- c.commit()
- return c
+ try:
+  with c:
+   c.execute("CREATE TABLE IF NOT EXISTS tasks (id TEXT PRIMARY KEY, created REAL, prompt TEXT, status TEXT, result TEXT)")
+   c.execute("CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id TEXT, agent TEXT, status TEXT, detail TEXT)")
+   c.execute("CREATE TABLE IF NOT EXISTS knowledge (id TEXT PRIMARY KEY, title TEXT, body TEXT)")
+   discussion.initialize(c)
+   c.execute("CREATE INDEX IF NOT EXISTS idx_events_task ON events(task_id,id)")
+   c.execute("CREATE INDEX IF NOT EXISTS idx_tasks_created ON tasks(created DESC)")
+   yield c
+ finally:
+  c.close()
+
 def infer(prompt):
  if ENGINE=="ollama":
   data=json.dumps({"model":MODEL,"prompt":prompt,"stream":False,"options":{"num_predict":LIMITS[MODE]}}).encode()
