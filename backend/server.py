@@ -169,8 +169,9 @@ def work(tid,prompt):
    with db() as c:
     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"engineer","running","Review cycle "+str(round_number)+": applying critic feedback"))
     board=discussion.context(discussion.entries(c,tid))
-   instruction=("Revise the latest engineer deliverable in response to the latest critic feedback. "
-                "Preserve working features and return the COMPLETE deliverable, not a summary. "
+   instruction=("Revise the latest engineer deliverable using the most recent critic review and shared discussion. "
+                "Address each concrete defect raised by the critic; do not silently ignore unresolved issues. "
+                "Preserve working features and return the COMPLETE updated deliverable, not a summary or patch. "
                 "For HTML return one complete fenced html document. Do not claim tests were run.")
    revised=infer(agent_prompt("engineer",instruction,prompt,memory,notes+[board]))
    if not isinstance(revised,str) or not revised.strip():raise ValueError("engineer revision returned an empty response")
@@ -185,7 +186,7 @@ def work(tid,prompt):
    with db() as c:
     c.execute("INSERT INTO events(task_id,agent,status,detail) VALUES(?,?,?,?)",(tid,"critic","running","Review cycle "+str(round_number+1)+": checking revised deliverable"))
     board=discussion.context(discussion.entries(c,tid))
-   critique=infer(agent_prompt("critic","Review the LATEST engineer revision, not the original. Identify remaining actionable defects and prioritize them. Do not claim execution.",prompt,memory,notes+[board]))
+   critique=infer(agent_prompt("critic","Review the LATEST engineer revision against the original request AND your previous concerns. Identify which defects were fixed, which remain, and any new defects. Prioritize actionable fixes; do not claim execution.",prompt,memory,notes+[board]))
    if not isinstance(critique,str) or not critique.strip():raise ValueError("critic returned an empty review")
    critique=critique.strip()
    outputs["critic"]=critique
