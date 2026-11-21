@@ -192,6 +192,32 @@ class BackendTests(unittest.TestCase):
   self.assertEqual(len(items),24)
   self.assertEqual(items[0]["content"],"Issue 6")
   self.assertNotIn("Private task note",server.discussion.context(items))
+ def test_performance_parallel_discovery_and_shared_handoff(self):
+  tid="parallel-discovery-test"
+  with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Explain a design","running",""))
+  gate=threading.Barrier(2,timeout=3)
+  calls=[]
+  call_lock=threading.Lock()
+  def fake_infer(prompt):
+   with call_lock:
+    calls.append(prompt)
+    index=len(calls)
+   if index<=2:
+    gate.wait()
+    return "Parallel finding "+str(index)
+   return "Reviewed result "+str(index)
+  with patch.object(server,"MODE","performance"):
+   with patch.object(server,"recall",return_value=""):
+    with patch.object(server,"infer",side_effect=fake_infer):
+     self.assertTrue(server.LOCK.acquire(False))
+     server.work(tid,"Explain a design")
+  _,body=self.call("/api/tasks/"+tid)
+  self.assertEqual(body["task"]["status"],"done")
+  self.assertEqual(len(calls),10)
+  self.assertEqual(len([e for e in body["events"] if e["agent"] in ("planner","researcher") and e["status"]=="running"]),2)
+  self.assertIn("PLANNER: Parallel finding",calls[2])
+  self.assertIn("RESEARCHER: Parallel finding",calls[2])
+  self.assertEqual(len([e for e in body["events"] if e["status"]=="done"]),10)
  def test_agent_failure_is_visible_and_releases_lock(self):
   tid="test-agent-error"
   with server.db() as c:c.execute("INSERT OR REPLACE INTO tasks VALUES(?,?,?,?,?)",(tid,0,"Test failure","running",""))
