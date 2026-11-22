@@ -26,3 +26,17 @@ Last refreshed: 2026-11-22 UTC
 - Replace the Java checked-exception response decoding that broke APK compilation.
 - Restore automatic CI for pushes and pull requests while retaining manual dispatch.
 - Verify the expanded backend test suite and APK before further product changes.
+
+## Verified evidence
+
+- Tested product source: `4d23bb8423a47a115a90fe6d9038bc43fe1d4c1b`
+- Workflow: run 65, ID `45034624433`, event `push`, conclusion `success`
+- Backend tests: passed
+- Android `:app:assembleDebug`: passed
+- APK metadata gate: versionCode 10 and versionName 2.4 passed
+- Artifact: ID `14759062011`, `AI-Collective-Nexus-v2.4-Dark-Edition`
+- Artifact ZIP size: 33,788 bytes
+- Artifact ZIP SHA-256: `999e7ebf95f59c7c01bc1d512300984899a72c9eac8acd0d8a9d956b4543aca8`
+- APK file: `Nexus-v2.4-Dark-Edition.apk`, 37,358 bytes
+- APK SHA-256: `d6a79e94f2a61acf62f9460686ef9116cc1931096239be13ca8f9bb42e31c45f`
+- Independent archive checks: ZIP integrity passed, APK ZIP integrity passed, file identified as an Android APK with an APK Signing Block.
