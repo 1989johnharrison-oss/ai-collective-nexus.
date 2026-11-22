@@ -437,11 +437,12 @@ public final class MainActivity extends Activity {
     if(in==null)throw new IOException("HTTP "+code);
     ByteArrayOutputStream buf=new ByteArrayOutputStream();byte[] chunk=new byte[4096];int n;
     while((n=in.read(chunk))!=-1){buf.write(chunk,0,n);if(buf.size()>1048576)throw new IOException("Response too large");}
-    String result="HTTP "+code+"\n"+buf.toString("UTF-8");
+    String responseBody=new String(buf.toByteArray(),StandardCharsets.UTF_8);
+    String result="HTTP "+code+"\n"+responseBody;
     handler.post(()->{
      if(!active)return;
      if(path.startsWith("/api/tasks/"))pollInFlight=false;
-     presentResponse(path,code,buf.toString("UTF-8"));
+     presentResponse(path,code,responseBody);
      if(path.equals("/api/health")&&code>=400)connectionStatus.setText("Backend: HTTP "+code);
      try{
       JSONObject json=new JSONObject(result.substring(result.indexOf("{")));
